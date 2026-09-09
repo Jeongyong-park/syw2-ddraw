@@ -1,0 +1,3 @@
+LIBRARY hqcdd
+EXPORTS
+    DirectDrawCreateEx=_DirectDrawCreateEx@16

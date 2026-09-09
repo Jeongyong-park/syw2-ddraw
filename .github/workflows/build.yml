@@ -1,0 +1,23 @@
+name: build
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  windows-build:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Configure Windows x86
+        run: cmake -S . -B build -A Win32
+      - name: Build wrapper and native tests
+        run: cmake --build build --config Release
+      - name: Verify preparation preserves original files
+        run: python -m unittest discover -s tests -p test_prepare.py -v
+      # Native runtime tests require an interactive desktop and a hardware D3D11
+      # device. Run build.ps1 locally; hosted CI only verifies their compilation.

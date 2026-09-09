@@ -1,0 +1,13 @@
+#pragma once
+#define IDD_DISPLAY 101
+#define IDC_MODE 1001
+#define IDC_RENDERER 1002
+#define IDC_LINEAR 1003
+#define IDC_VSYNC 1004
+#define IDC_SAVE 1005
+#define IDC_STATUS 1006
+#define IDC_APPLY 1007
+#define IDC_WINDOWED 1010
+#define IDC_FULLSCREEN 1011
+#define IDC_GPU 1012
+#define IDC_GDI 1013
