@@ -17,7 +17,7 @@ jobs:
         run: cmake -S . -B build -A Win32
       - name: Build wrapper and native tests
         run: cmake --build build --config Release
-      - name: Verify preparation preserves original files
-        run: python -m unittest discover -s tests -p test_prepare.py -v
+      - name: Verify preparation and packaging
+        run: python -m unittest discover -s tests -p test_*.py -v
       # Native runtime tests require an interactive desktop and a hardware D3D11
       # device. Run build.ps1 locally; hosted CI only verifies their compilation.
