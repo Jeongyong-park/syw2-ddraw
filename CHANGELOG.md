@@ -6,6 +6,13 @@
 
 ## [Unreleased]
 
+- 버전 태그 CI 통과 시 사용자 ZIP·SHA-256을 GitHub Release로 자동 게시. 0.x는 시험판으로 표시.
+- 태그/VERSION 불일치·ZIP 해시 불일치 검사 및 실제 좌표 변환 코드의 Unicorn x86 테스트 추가.
+
+- 사용자 ZIP 루트에 ddraw.dll·hqcdd.ini·INSTALL.txt를 제공하고 개발자 ZIP을 별도로 생성.
+- ZIP 전체 및 내부 파일 SHA-256, 추출 후 한글·공백 경로의 일반 DLL import 검사와 CI 아티팩트 추가.
+- 0.6 이슈별 구현 계획과 Windows 10·11 실기기 설치·업데이트·복구 검증표 추가.
+
 - 일반 사용자 설치를 EXE 옆 ddraw.dll 교체 방식으로 통일. Python·EXE 패치·런처는 기본 설치에서 제외.
 - 업데이트·설정 보존·원래 DLL 복구 및 이전 HQ그래픽 시험본에서의 전환 안내 추가.
 - prepare.py/launch.ps1은 개발·비교용으로 문서화하고 호환성·타이밍·배포 체크리스트도 갱신.

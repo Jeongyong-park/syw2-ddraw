@@ -34,11 +34,25 @@ INI 키와 의미, 기본 DLL 교체 설치·업데이트·복구 절차 및 개
 2. `./build.ps1`과 `python -m unittest discover -s tests -p "test_*.py" -v`를 실행합니다.
 3. `python package.py`로 ZIP을 만들고 DLL 속성과 패키지 내용을 확인합니다.
    게임 폴더에 DLL을 ddraw.dll로 배치한 상태의 실제 실행·설정·종료·복구도 검사합니다.
-   현재 ZIP의 build/Release/hqcdd.dll과 hqcdd.ini가 README의 설치 경로와 일치해야 합니다.
+   사용자 ZIP 루트의 ddraw.dll과 hqcdd.ini가 README의 설치 경로와 일치해야 합니다.
+   `python package.py --developer`로 개발자 ZIP도 생성하고 `tests/test_distribution.ps1`을 실행합니다.
+   두 ZIP 및 각 .zip.sha256을 확인하고 [0.6 실기기 검증](milestone-0.6.md)을 기록합니다.
 4. 확정한 변경을 커밋한 뒤 해당 커밋에 `v<버전>` 태그를 붙여 배포합니다.
 5. 배포한 버전은 같은 이름으로 내용을 바꾸지 않습니다. 변경 시 새 버전을 사용합니다.
 
 로컬 패키징은 같은 버전 ZIP을 다시 만들 수 있지만, 이미 공개한 릴리스 자산은 교체하지 않습니다.
-현재 작업은 0.6.0 배포 준비이며 태그·GitHub Release 생성은 별도입니다.
+### GitHub Release 자동 게시
+
+VERSION과 정확히 일치하는 `v<버전>` 태그를 push하면 빌드 CI가 실행됩니다.
+Unicorn 좌표 변환, Python 테스트, DLL 속성, 추출 ZIP의 DLL import 및 태그·ZIP 해시 검사가 통과해야 게시 작업이 시작됩니다.
+사용자 ZIP과 `.zip.sha256`만 Release Assets에 게시하며 개발자 ZIP은 Actions 아티팩트로 제공합니다.
+0.x는 GitHub Pre-release로 표시하고 1.0 이상은 정식 Release로 게시합니다.
+이는 VERSION의 SemVer 문법과 별개인 GitHub 표시이며 `-rc.1` 태그 지원은 아직 없습니다.
+
+PR/main 빌드는 게시하지 않고 `python tools/release.py --tag v<버전>`으로 오프라인 배포 검사를 수행합니다.
+게시 작업만 contents: write 권한과 GH_TOKEN을 받습니다.
+`gh release create --verify-tag`로 기존 원격 태그를 사용하며 기존 Release·자산은 덮어쓰지 않습니다.
+같은 태그의 재실행으로 기존 Release가 발견되면 실패합니다. 수정 배포는 새 버전을 사용하세요.
+태그 생성·push는 실제 공개 배포를 시작하므로 배포할 커밋의 검증 결과와 CHANGELOG를 먼저 확인합니다.
 
 DLL 메타데이터 형식: [Microsoft VERSIONINFO](https://learn.microsoft.com/en-us/windows/win32/menurc/versioninfo-resource).

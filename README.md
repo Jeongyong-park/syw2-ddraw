@@ -39,10 +39,11 @@ HQNET 로그인·채팅 입력칸이 사라지거나 깜빡이는 문제도 개�
 ## 준비할 것
 
 - 평소 정상 실행되는 조선의반격 게임 폴더와 실행 파일.
-- **빌드된 DLL이 포함된 배포 ZIP**. GitHub의 **Source code (zip)**에는 빌드 DLL이 없습니다.
+- **최종사용자 배포 ZIP `syw2-ddraw-v<버전>.zip`**. GitHub의 **Source code (zip)**에는 빌드 DLL이 없습니다.
 
 **Python·PowerShell 명령·Visual Studio·EXE 패치는 필요 없습니다.**
-현재 공개 GitHub Release는 없습니다. 시험 참여자는 제작자가 제공한 DLL 포함 ZIP을 사용하세요.
+[배포 페이지](https://github.com/Jeongyong-park/syw2-ddraw/releases)의 **Assets**에서 사용자 ZIP을 선택하세요.
+`0.x`는 **Pre-release(시험판)**로 표시됩니다. 아직 배포 항목이 없으면 제작자가 제공한 시험 ZIP을 사용하세요.
 
 충무공넷을 이용한다면 평소 사용하던 충무공넷 EXE를 그대로 사용합니다.
 이 도구는 서버 주소·계정·VPN·게임방 연결 방식을 변경하지 않습니다.
@@ -53,19 +54,21 @@ HQNET 로그인·채팅 입력칸이 사라지거나 깜빡이는 문제도 개�
 2. 평소 실행하는 EXE가 있는 게임 폴더를 엽니다.
 3. 그 폴더에 기존 `ddraw.dll`이 있으면 `ddraw.dll.bak`으로 이름을 바꿔 보관합니다.
    이미 같은 백업 이름이 있다면 `ddraw-original-2.dll.bak`처럼 다른 이름을 사용하세요.
-4. 배포 ZIP의 `build\Release\hqcdd.dll`을 게임 폴더로 **복사한 뒤 `ddraw.dll`로 이름을 바꿉니다.**
+4. 배포 ZIP을 압축 해제하고, 그 안의 `ddraw.dll`을 게임 폴더로 복사합니다.
 5. 배포 ZIP의 `hqcdd.ini`도 같은 게임 폴더에 복사합니다.
    이미 HQCDD 설정 파일이 있다면 기존 설정을 유지하세요.
 6. 기존 게임 EXE를 실행합니다. 예: `조선의반격 오리지날 실행 충무공넷.exe`.
 
-압축을 푼 폴더 안에 `syw2-ddraw` 폴더가 한 단계 더 있다면 그 안에서 DLL과 INI를 찾으세요.
+최종사용자 ZIP에는 `ddraw.dll`과 `hqcdd.ini`가 바로 들어 있습니다.
+간단한 설치 안내는 함께 제공되는 [INSTALL.txt](INSTALL.txt)를 참고하세요.
+이름에 `-developer`가 붙은 ZIP은 개발용 소스·도구 묶음입니다.
 
 설치 후 게임 폴더의 예시입니다.
 
 ```text
 D:\syw2plus\
   조선의반격 오리지날 실행 충무공넷.exe  ← 평소 실행하던 파일
-  ddraw.dll                              ← 우리 hqcdd.dll의 이름을 변경
+  ddraw.dll                              ← 배포 ZIP의 화면 개선 DLL
   hqcdd.ini                              ← 화면 설정, 이 이름 그대로 유지
   ddraw.dll.bak                          ← 기존 DLL 백업, 있었던 경우
   ...기존 게임 데이터...

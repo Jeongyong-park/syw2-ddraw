@@ -35,3 +35,13 @@ target_compile_definitions(gpu_test PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX)
 target_compile_options(gpu_test PRIVATE /W4 /utf-8 /EHsc)
 target_link_libraries(gpu_test PRIVATE user32 d3d11 dxgi d3dcompiler)
 add_test(NAME gpu_test COMMAND gpu_test)
+
+# Smoke test links the system import library; the packaged DLL is placed beside it.
+add_executable(loader_test tests/loader_test.cpp)
+target_compile_definitions(loader_test PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX)
+target_compile_options(loader_test PRIVATE /W4 /utf-8 /EHsc)
+target_link_libraries(loader_test PRIVATE ddraw dxguid user32 ole32)
+
+# CPU-only probe for Unicorn. Never included in user distribution.
+add_library(unicorn_probe SHARED tests/unicorn_probe.cpp)
+target_compile_options(unicorn_probe PRIVATE /W4 /utf-8 /EHsc)

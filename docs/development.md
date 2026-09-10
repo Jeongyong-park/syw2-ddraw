@@ -48,11 +48,21 @@ CI는 Windows x86 컴파일, DLL 메타데이터, Python 설치·패키징 테�
 - wrapper_test: COM 수명, 팔레트·표면 복사, GDI 입력칸, 창 전환, 좌표 변환, 오버레이·F10·커서 회귀.
 - gpu_test: 8/16/32비트 readback, 팔레트 변경, 행 간격, 방향, 필터 경계, 정수·비정수·축소 배율.
 - test_prepare: 독립 PE 픽스처로 원본 보존과 잘못된 입력 거부.
-- test_package: 포함 파일 제한, 경로 정규화, 버전 형식, 반복 패키징.
+- test_package: 사용자·개발자 ZIP 구성, 내부·외부 SHA-256, 버전 형식, 반복 패키징과 실패 시 기존 ZIP 보존.
+- test_distribution.ps1 / loader_test: 추출한 ZIP의 한글·공백 경로에서 일반 DDRAW.dll import 검증.
 - test_version.ps1: 실제 DLL의 제작자·문자열 버전·숫자 버전 확인.
 
 `wrapper_test.exe <DLL 경로> --save-test`는 DLL 옆 INI에 기록합니다.
 반드시 임시 폴더에 복사한 DLL로 실행하고 사용자 설치에는 사용하지 않습니다.
+
+## Unicorn CPU 검증
+
+`python -m pip install unicorn==2.1.4` 후 `python tests/unicorn_viewport.py`를 실행합니다.
+Release 빌드의 테스트 전용 unicorn_probe.dll에서 실제 src/viewport.h 코드를 x86으로 실행합니다.
+화면 비율·정수 배율·축소·0 크기·좌표 경계와 고정 시드 무작위 입력을 포함한 1,008개 사례를 유리수 기준값과 비교합니다.
+Windows API나 DllMain을 실행하지 않으며 GDI·IME·GPU·게임 진행 속도·Windows 10/11 호환성 검증은 아닙니다.
+테스트 DLL은 배포 ZIP에 포함하지 않습니다. CI에서도 같은 검사를 수행합니다.
+참고: [Unicorn 문서](https://www.unicorn-engine.org/docs/).
 
 ## 설치 방식과 패키징
 
@@ -88,16 +98,24 @@ python .\prepare.py "D:\syw2plus\조선의반격 오리지날 실행 충무공�
 
 ```powershell
 python .\package.py
+python .\package.py --developer
+.\tests\test_distribution.ps1
 ```
 
-현재 ZIP은 개발용 소스·도구도 포함하며 DLL은 build/Release/hqcdd.dll에 들어 있습니다.
-README는 사용자가 이 DLL을 ddraw.dll로 복사하는 절차를 안내합니다.
-사용자에게 prepare.py 실행을 필수로 요구하지 않습니다.
+- `output/syw2-ddraw-v<버전>.zip`: 최종사용자용. 루트에 ddraw.dll, hqcdd.ini, INSTALL.txt와 문서를 제공합니다.
+- `output/syw2-ddraw-v<버전>-developer.zip`: 소스·도구·테스트와 build/Release/hqcdd.dll을 syw2-ddraw/ 아래에 제공합니다.
+- 각 ZIP 옆의 `.zip.sha256`은 ZIP 전체 해시이며, ZIP 안의 `SHA256SUMS.txt`는 해당 파일을 제외한 내부 파일별 해시입니다.
 
-패키징은 `VERSION`과 실제 Release DLL의 속성을 비교한 뒤
-`output/syw2-ddraw-v<버전>.zip`을 만듭니다. Git 내부 파일·게임 EXE·기존 산출물은 제외합니다.
-ZIP 생성 중 실패하면 기존 ZIP을 보존합니다.
-소스·문서·문서 이미지·DLL이 포함되므로 새 문서 리소스가 빠지지 않는지 확인하세요.
+패키징 명령은 VERSION과 실제 DLL 속성을 먼저 비교합니다.
+필수 파일 누락이나 ZIP 생성 실패 시 기존 ZIP을 보존하며 게임 EXE·Git 내부 파일·기존 산출물은 제외합니다.
+스크린샷을 포함한 docs 문서는 두 ZIP 모두에 들어갑니다. 사용자 설치에는 개발 도구가 필요 없습니다.
+
+`test_distribution.ps1`은 사용자 ZIP을 한글·공백이 포함된 임시 폴더에 풀고 DLL 메타데이터를 확인합니다.
+시스템 ddraw import library로 링크한 loader_test.exe가 옆의 ddraw.dll을 자동으로 불러오는지,
+DirectDraw7 생성 및 시스템 클리퍼 위임이 되는지 확인한 뒤 임시 폴더를 정리합니다.
+CI에서도 두 ZIP을 생성하고 이 테스트를 실행한 뒤 ZIP과 해시를 아티팩트로 보관합니다.
+이는 실제 게임의 로그인·전투·종료나 개발 도구 없는 Windows 10·11 검증을 대체하지 않습니다.
+남은 실기기 검증과 기록 양식은 [0.6 구현·검증 계획](milestone-0.6.md)에 있습니다.
 
 ## 소스 구조
 
