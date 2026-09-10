@@ -6,6 +6,8 @@
 
 ## [Unreleased]
 
+- 새 설치와 설정 파일이 없는 실행의 기본값을 GPU + Sharp Bilinear + 수직동기화 끄기로 변경. 기존 Scaling 및 LinearFilter 설정은 유지.
+
 ## [0.6.2] — 2026-09-10
 
 ### 수정
