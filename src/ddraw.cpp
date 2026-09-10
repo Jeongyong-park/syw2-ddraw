@@ -81,6 +81,8 @@ struct Child {
     HFONT original_font=nullptr, scaled_font=nullptr;
     LOGFONTW font{};
     int font_height=0, font_width=0;
+    bool original_clip_siblings=false;
+    bool overlay_clipping=false;
 };
 std::set<Surface*> surfaces;
 std::set<Palette*> palettes;
@@ -144,6 +146,8 @@ public:
     void add_child(HWND child);
     void remove_child(HWND child, bool restore);
     void fit_child(HWND child);
+    void update_child_clipping(HWND child);
+    void update_children_clipping();
     RECT child_rect(HWND child, RECT logical) const;
     void update_clip();
     bool hotkey(UINT msg, WPARAM w, LPARAM l);
@@ -447,6 +451,13 @@ LRESULT CALLBACK child_proc(HWND h, UINT msg, WPARAM w, LPARAM l, UINT_PTR, DWOR
     if (d->hotkey(msg,w,l)) return 0; // Alt+Enter also works with the ID/IME control focused
     if (msg==WM_PARENTNOTIFY && LOWORD(w)==WM_CREATE) d->add_child(reinterpret_cast<HWND>(l));
     auto it=d->children.find(h);
+    if (msg==WM_WINDOWPOSCHANGING && d->settings && GetParent(h)==d->window) {
+        auto pos=reinterpret_cast<WINDOWPOS*>(l);
+        // Game controls may be raised or created while the overlay is open.
+        if (!(pos->flags&SWP_NOZORDER) &&
+            (pos->hwndInsertAfter==HWND_TOP || pos->hwndInsertAfter==HWND_TOPMOST || pos->hwndInsertAfter==HWND_NOTOPMOST))
+            pos->hwndInsertAfter=d->settings;
+    }
     if (it!=d->children.end() && !d->layout_busy) {
         auto& child=it->second;
         if (msg==WM_WINDOWPOSCHANGING) {
@@ -561,6 +572,7 @@ void Draw::open_settings() {
     opening_settings=false;
     if (!settings) { log("settings creation failed: %lu",GetLastError()); return; }
     settings_window=settings;
+    sync_children();
     update_clip();
     ShowWindow(settings,SW_SHOW); SetFocus(GetDlgItem(settings,IDC_WINDOWED));
     begin_overlay_cursor();
@@ -571,6 +583,7 @@ void Draw::close_settings() {
     HWND h=settings; settings=nullptr;
     if (settings_window==h) settings_window=nullptr;
     if (IsWindow(h)) DestroyWindow(h);
+    update_children_clipping();
     overlay.background.clear();
     if(IsWindow(window)) RedrawWindow(window,nullptr,nullptr,RDW_INVALIDATE|RDW_ALLCHILDREN);
 }
@@ -670,6 +683,7 @@ INT_PTR CALLBACK settings_proc(HWND h, UINT msg, WPARAM w, LPARAM l) {
         end_overlay_cursor();
         if (settings_window==h) settings_window=nullptr;
         d->settings=nullptr;
+        d->update_children_clipping();
     }
     return FALSE;
 }
@@ -745,6 +759,8 @@ void Draw::add_child(HWND h) {
     GetObjectW(c.original_font,sizeof(c.font),&c.font);
     children.emplace(h,c);
     if (!SetWindowSubclass(h,child_proc,1,reinterpret_cast<DWORD_PTR>(this))) { children.erase(h); return; }
+    update_child_clipping(h);
+    if (settings) SetWindowPos(settings,HWND_TOP,0,0,0,0,SWP_NOMOVE|SWP_NOSIZE|SWP_NOACTIVATE);
     // Defer positioning until CreateWindow/WM_CREATE has fully returned.
     PostMessageW(window,WM_HQ_LAYOUT,0,0);
 }
@@ -754,10 +770,32 @@ void Draw::remove_child(HWND h, bool restore) {
     children.erase(it);
     if (restore && IsWindow(h)) {
         RemoveWindowSubclass(h,child_proc,1);
+        if (c.overlay_clipping) {
+            const auto style=GetWindowLongPtrW(h,GWL_STYLE)&~LONG_PTR(WS_CLIPSIBLINGS);
+            SetWindowLongPtrW(h,GWL_STYLE,style|(c.original_clip_siblings?WS_CLIPSIBLINGS:0));
+        }
         SendMessageW(h,WM_SETFONT,reinterpret_cast<WPARAM>(c.original_font),TRUE);
         SetWindowPos(h,nullptr,c.logical.left,c.logical.top,c.logical.right-c.logical.left,c.logical.bottom-c.logical.top,SWP_NOZORDER|SWP_NOACTIVATE);
     }
     if (c.scaled_font) DeleteObject(c.scaled_font);
+}
+void Draw::update_child_clipping(HWND h) {
+    auto it=children.find(h); if (it==children.end() || !IsWindow(h)) return;
+    auto& c=it->second;
+    // Only the game's direct children are siblings of the full-client overlay.
+    const bool enabled=IsWindow(settings) && GetParent(h)==window;
+    if (enabled==c.overlay_clipping) return;
+    const auto style=GetWindowLongPtrW(h,GWL_STYLE);
+    if (enabled) c.original_clip_siblings=(style&WS_CLIPSIBLINGS)!=0;
+    c.overlay_clipping=enabled;
+    SetWindowLongPtrW(h,GWL_STYLE,(style&~LONG_PTR(WS_CLIPSIBLINGS))|
+        ((enabled || c.original_clip_siblings)?WS_CLIPSIBLINGS:0));
+}
+void Draw::update_children_clipping() {
+    // Do not enumerate/register windows while the settings dialog is being destroyed.
+    std::vector<HWND> list;
+    for (const auto& entry:children) list.push_back(entry.first);
+    for (auto h:list) update_child_clipping(h);
 }
 void Draw::fit_child(HWND h) {
     auto it=children.find(h); if (it==children.end()) return;
@@ -786,7 +824,10 @@ void Draw::sync_children() {
     EnumChildWindows(window,[](HWND h,LPARAM data)->BOOL { reinterpret_cast<Draw*>(data)->add_child(h); return TRUE; },reinterpret_cast<LPARAM>(this));
     std::vector<HWND> list;
     for (auto& entry:children) list.push_back(entry.first);
-    for (auto h:list) { if (IsWindow(h)) fit_child(h); else remove_child(h,false); }
+    for (auto h:list) {
+        if (IsWindow(h)) { update_child_clipping(h); fit_child(h); }
+        else remove_child(h,false);
+    }
 }
 void Draw::present() {
     if (presenting || layout_busy || !primary || primary->busy() || !IsWindow(window) || IsIconic(window)) return;
