@@ -7,6 +7,7 @@ namespace hq {
 struct Overlay {
     std::vector<uint32_t> background;
     int image_width=0,image_height=0;
+    bool integer_scaling=false;
     HFONT heading=nullptr,body=nullptr,small_font=nullptr;
     float scale=1; int x=0,y=0;
     ~Overlay();

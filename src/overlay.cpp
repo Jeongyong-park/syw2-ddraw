@@ -26,14 +26,14 @@ LRESULT CALLBACK button_proc(HWND h,UINT msg,WPARAM w,LPARAM l,UINT_PTR,DWORD_PT
 Overlay::~Overlay() { if(heading) DeleteObject(heading); if(body) DeleteObject(body); if(small_font) DeleteObject(small_font); }
 RECT Overlay::rect(int a,int b,int c,int d) const { return {x+int(std::lround(a*scale)),y+int(std::lround(b*scale)),x+int(std::lround(c*scale)),y+int(std::lround(d*scale))}; }
 void Overlay::init(HWND h) {
-    for(int id:{IDC_MODE,IDC_RENDERER,IDC_STATUS}) ShowWindow(GetDlgItem(h,id),SW_HIDE);
-    for(int id:{IDC_LINEAR,IDC_VSYNC,IDC_SAVE,IDC_APPLY,IDCANCEL}) {
+    for(int id:{IDC_MODE,IDC_RENDERER,IDC_SCALING,IDC_STATUS}) ShowWindow(GetDlgItem(h,id),SW_HIDE);
+    for(int id:{IDC_VSYNC,IDC_SAVE,IDC_APPLY,IDCANCEL}) {
         auto button=GetDlgItem(h,id); const auto checked=SendMessageW(button,BM_GETCHECK,0,0);
         SetWindowLongPtrW(button,GWL_STYLE,WS_CHILD|WS_VISIBLE|WS_TABSTOP|BS_OWNERDRAW);
         SetWindowSubclass(button,button_proc,5,0); SendMessageW(button,BM_SETCHECK,checked,0);
     }
     struct Item{int id;const wchar_t* title;};
-    for(auto i:{Item{IDC_WINDOWED,L"창 모드"},Item{IDC_FULLSCREEN,L"전체화면"},Item{IDC_GPU,L"GPU"},Item{IDC_GDI,L"GDI"}}) {
+    for(auto i:{Item{IDC_WINDOWED,L"창 모드"},Item{IDC_FULLSCREEN,L"전체화면"},Item{IDC_GPU,L"GPU"},Item{IDC_GDI,L"GDI"},Item{IDC_NEAREST,L"Nearest"},Item{IDC_BILINEAR,L"Bilinear"},Item{IDC_SHARP,L"Sharp Bilinear"},Item{IDC_INTEGER,L"Integer"}}) {
         auto button=CreateWindowW(L"BUTTON",i.title,WS_CHILD|WS_VISIBLE|WS_TABSTOP|BS_OWNERDRAW,0,0,1,1,h,reinterpret_cast<HMENU>(INT_PTR(i.id)),GetModuleHandleW(nullptr),nullptr);
         SetWindowSubclass(button,button_proc,5,0);
     }
@@ -54,7 +54,8 @@ void Overlay::layout(HWND h) {
     struct Item{int id,a,b,c,d;};
     for(auto i:{Item{IDC_WINDOWED,300,125,431,164},Item{IDC_FULLSCREEN,437,125,568,164},
         Item{IDC_GPU,300,197,431,236},Item{IDC_GDI,437,197,568,236},
-        Item{IDC_LINEAR,494,271,568,305},Item{IDC_VSYNC,494,333,568,367},
+        Item{IDC_NEAREST,300,265,431,292},Item{IDC_BILINEAR,437,265,568,292},
+        Item{IDC_SHARP,300,298,431,325},Item{IDC_INTEGER,437,298,568,325},Item{IDC_VSYNC,494,333,568,367},
         Item{IDC_SAVE,30,452,295,488},Item{IDCANCEL,316,452,406,488},Item{IDC_APPLY,416,452,568,488}}) {
         auto r=rect(i.a,i.b,i.c,i.d); SetWindowPos(GetDlgItem(h,i.id),nullptr,r.left,r.top,r.right-r.left,r.bottom-r.top,SWP_NOZORDER|SWP_NOACTIVATE);
     }
@@ -65,7 +66,7 @@ void Overlay::paint(HWND h,HDC dc) {
     if(!background.empty()) {
         BITMAPINFO info{}; info.bmiHeader.biSize=sizeof(BITMAPINFOHEADER); info.bmiHeader.biWidth=image_width;
         info.bmiHeader.biHeight=-image_height; info.bmiHeader.biPlanes=1; info.bmiHeader.biBitCount=32;
-        auto v=Viewport::fit(client.right,client.bottom,image_width,image_height);
+        auto v=Viewport::fit(client.right,client.bottom,image_width,image_height,integer_scaling);
         SetStretchBltMode(dc,COLORONCOLOR); StretchDIBits(dc,v.x,v.y,v.width,v.height,0,0,image_width,image_height,background.data(),&info,DIB_RGB_COLORS,SRCCOPY);
     }
     fill(dc,rect(7,9,607,519),RGB(10,9,8));
@@ -83,8 +84,8 @@ void Overlay::paint(HWND h,HDC dc) {
     label(dc,body,rect(30,198,280,220),L"화면 출력",text);
     label(dc,small_font,rect(30,222,288,241),L"GPU 가속 또는 GDI 호환 출력",muted);
     fill(dc,rect(30,255,570,256),RGB(57,48,36));
-    label(dc,body,rect(30,270,450,292),L"부드러운 확대",text);
-    label(dc,small_font,rect(30,295,450,314),L"픽셀 경계를 부드럽게 보간합니다",muted);
+    label(dc,body,rect(30,270,288,292),L"업스케일 방식",text);
+    label(dc,small_font,rect(30,295,288,314),L"보간 필터는 GPU 출력에서 사용",muted);
     label(dc,body,rect(30,333,450,355),L"수직동기화",text);
     label(dc,small_font,rect(30,358,475,377),L"게임 진행 속도에 영향을 줄 수 있습니다",muted);
     fill(dc,rect(30,394,570,395),RGB(57,48,36));
@@ -95,7 +96,8 @@ void Overlay::button(HWND h,const DRAWITEMSTRUCT& item) {
     auto r=item.rcItem; const int id=int(item.CtlID); bool selected=false;
     if(id==IDC_WINDOWED || id==IDC_FULLSCREEN) selected=(SendDlgItemMessageW(h,IDC_MODE,CB_GETCURSEL,0,0)==(id==IDC_WINDOWED?0:1));
     if(id==IDC_GPU || id==IDC_GDI) selected=(SendDlgItemMessageW(h,IDC_RENDERER,CB_GETCURSEL,0,0)==(id==IDC_GPU?0:1));
-    bool toggle=id==IDC_LINEAR || id==IDC_VSYNC || id==IDC_SAVE;
+    if(id>=IDC_NEAREST && id<=IDC_INTEGER) selected=SendDlgItemMessageW(h,IDC_SCALING,CB_GETCURSEL,0,0)==id-IDC_NEAREST;
+    bool toggle=id==IDC_VSYNC || id==IDC_SAVE;
     if(toggle) selected=SendMessageW(item.hwndItem,BM_GETCHECK,0,0)==BST_CHECKED;
     bool enabled=IsWindowEnabled(item.hwndItem)!=FALSE, hover=GetPropW(item.hwndItem,L"hover")!=nullptr;
     COLORREF bg=selected?RGB(79,57,31):RGB(39,34,28);

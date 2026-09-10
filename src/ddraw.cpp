@@ -1,3 +1,4 @@
+#include "version.h"
 // SYW2Plus-specific DirectDraw 7 software presentation layer.
 // No process-wide palette, display-mode switch, driver, injection, or network hook.
 #include <windows.h>
@@ -108,7 +109,8 @@ public:
     bool have_placement=false;
     std::map<HWND,Child> children;
     std::unique_ptr<hq::Gpu> gpu;
-    bool gpu_enabled=true, gpu_reported=false, presenting=false, vsync=false, linear=false;
+    bool gpu_enabled=true, gpu_reported=false, presenting=false, vsync=false;
+    int scaling=hq::Nearest;
     HWND settings=nullptr, previous_focus=nullptr;
     HHOOK settings_hook=nullptr;
     bool gpu_preferred=true;
@@ -121,8 +123,11 @@ public:
         gpu_enabled=_wcsicmp(renderer,L"gdi")!=0;
         gpu_preferred=gpu_enabled;
         vsync=GetPrivateProfileIntW(L"Display",L"VSync",0,local_path(L"hqcdd.ini").c_str())!=0;
-        linear=GetPrivateProfileIntW(L"Display",L"LinearFilter",0,local_path(L"hqcdd.ini").c_str())!=0;
-        log("HQCDD 0.5.2 created; renderer=%ls",renderer);
+        const bool legacy_linear=GetPrivateProfileIntW(L"Display",L"LinearFilter",0,local_path(L"hqcdd.ini").c_str())!=0;
+        wchar_t filter[32]{};
+        GetPrivateProfileStringW(L"Display",L"Scaling",L"",filter,32,local_path(L"hqcdd.ini").c_str());
+        scaling=hq::parse_scaling(filter,legacy_linear);
+        log("HQCDD " HQCDD_VERSION " created; renderer=%ls",renderer);
     }
     ~Draw();
     REFCOUNT()
@@ -543,6 +548,7 @@ void Draw::open_settings() {
     if (IsWindow(settings_window)) { SetFocus(GetDlgItem(settings_window,IDC_WINDOWED)); return; }
     previous_focus=GetFocus();
     begin_overlay_input();
+    overlay.integer_scaling=scaling==hq::Integer;
     overlay.background.clear();
     if (primary && !primary->busy()) {
         hq::Palette pal{}; if(primary->palette) pal=primary->palette->colors();
@@ -575,9 +581,11 @@ void Draw::apply_settings() {
     const bool use_gpu=SendDlgItemMessageW(settings,IDC_RENDERER,CB_GETCURSEL,0,0)==0;
     const bool use_window=SendDlgItemMessageW(settings,IDC_MODE,CB_GETCURSEL,0,0)==0;
     gpu.reset(); gpu_reported=false; gpu_enabled=use_gpu; gpu_preferred=use_gpu;
-    linear=IsDlgButtonChecked(settings,IDC_LINEAR)==BST_CHECKED;
+    scaling=int(SendDlgItemMessageW(settings,IDC_SCALING,CB_GETCURSEL,0,0));
+    if(scaling<0 || scaling>hq::Integer) scaling=hq::Nearest;
+    overlay.integer_scaling=scaling==hq::Integer;
     vsync=IsDlgButtonChecked(settings,IDC_VSYNC)==BST_CHECKED;
-    set_windowed(use_window); present();
+    set_windowed(use_window); sync_children(); update_clip(); present();
     bool saved=true;
     const bool save=IsDlgButtonChecked(settings,IDC_SAVE)==BST_CHECKED;
     if (save) {
@@ -585,15 +593,19 @@ void Draw::apply_settings() {
         saved=WritePrivateProfileStringW(L"Display",L"Fullscreen",windowed?L"0":L"1",path.c_str())!=FALSE;
         saved=(WritePrivateProfileStringW(L"Display",L"Renderer",use_gpu?L"auto":L"gdi",path.c_str())!=FALSE)&&saved;
         saved=(WritePrivateProfileStringW(L"Display",L"VSync",vsync?L"1":L"0",path.c_str())!=FALSE)&&saved;
-        saved=(WritePrivateProfileStringW(L"Display",L"LinearFilter",linear?L"1":L"0",path.c_str())!=FALSE)&&saved;
+        saved=(WritePrivateProfileStringW(L"Display",L"LinearFilter",scaling==hq::Bilinear?L"1":L"0",path.c_str())!=FALSE)&&saved;
+    }
+    if(save) {
+        saved=(WritePrivateProfileStringW(L"Display",L"Scaling",hq::scaling_name(scaling),local_path(L"hqcdd.ini").c_str())!=FALSE)&&saved;
     }
     if (!saved) SetDlgItemTextW(settings,IDC_STATUS,L"현재 화면에 적용했습니다. 설정 파일 저장은 실패했습니다.");
     else if (use_gpu && !gpu_enabled) SetDlgItemTextW(settings,IDC_STATUS,L"GPU 출력을 사용할 수 없어 GDI로 적용했습니다.");
+    else if(!use_gpu && (scaling==hq::Bilinear || scaling==hq::SharpBilinear)) SetDlgItemTextW(settings,IDC_STATUS,L"GDI에서는 Nearest로 출력합니다. 보간 필터는 GPU에서 적용됩니다.");
     else SetDlgItemTextW(settings,IDC_STATUS,save?L"적용하고 저장했습니다.":L"현재 실행에 적용했습니다. 파일에는 저장하지 않았습니다.");
     // Switching the owner's style can change z-order. Keep this owned window accessible.
     SetWindowPos(settings,HWND_TOP,0,0,0,0,SWP_NOMOVE|SWP_NOSIZE);
     overlay.layout(settings); InvalidateRect(settings,nullptr,FALSE); update_clip();
-    log("Display settings applied: gpu=%d fullscreen=%d linear=%d vsync=%d save=%d success=%d",use_gpu,!windowed,linear,vsync,save,saved);
+    log("Display settings applied: gpu=%d fullscreen=%d scaling=%d vsync=%d save=%d success=%d",use_gpu,!windowed,scaling,vsync,save,saved);
 }
 INT_PTR CALLBACK settings_proc(HWND h, UINT msg, WPARAM w, LPARAM l) {
     auto d=reinterpret_cast<Draw*>(GetWindowLongPtrW(h,DWLP_USER));
@@ -606,13 +618,16 @@ INT_PTR CALLBACK settings_proc(HWND h, UINT msg, WPARAM w, LPARAM l) {
         SendDlgItemMessageW(h,IDC_RENDERER,CB_ADDSTRING,0,reinterpret_cast<LPARAM>(L"GPU (D3D11 · 자동 복구)"));
         SendDlgItemMessageW(h,IDC_RENDERER,CB_ADDSTRING,0,reinterpret_cast<LPARAM>(L"호환 출력 (GDI)"));
         SendDlgItemMessageW(h,IDC_RENDERER,CB_SETCURSEL,d->gpu_preferred?0:1,0);
-        CheckDlgButton(h,IDC_LINEAR,d->linear?BST_CHECKED:BST_UNCHECKED);
+        for(auto name:{L"Nearest Neighbor",L"Bilinear",L"Sharp Bilinear",L"Integer"})
+            SendDlgItemMessageW(h,IDC_SCALING,CB_ADDSTRING,0,reinterpret_cast<LPARAM>(name));
+        SendDlgItemMessageW(h,IDC_SCALING,CB_SETCURSEL,d->scaling,0);
         CheckDlgButton(h,IDC_VSYNC,d->vsync?BST_CHECKED:BST_UNCHECKED);
         CheckDlgButton(h,IDC_SAVE,BST_CHECKED);
-        EnableWindow(GetDlgItem(h,IDC_LINEAR),d->gpu_preferred);
         EnableWindow(GetDlgItem(h,IDC_VSYNC),d->gpu_preferred);
         SetDlgItemTextW(h,IDC_STATUS,L"게임은 계속 진행됩니다.  ·  Esc 또는 닫기 버튼으로 닫기");
         d->overlay.init(h);
+        EnableWindow(GetDlgItem(h,IDC_BILINEAR),d->gpu_preferred);
+        EnableWindow(GetDlgItem(h,IDC_SHARP),d->gpu_preferred);
         return TRUE;
     }
     if (!d) return FALSE;
@@ -631,12 +646,17 @@ INT_PTR CALLBACK settings_proc(HWND h, UINT msg, WPARAM w, LPARAM l) {
             if(!mode) SendMessageW(h,WM_COMMAND,MAKEWPARAM(IDC_RENDERER,CBN_SELCHANGE),0);
             RedrawWindow(h,nullptr,nullptr,RDW_INVALIDATE|RDW_ALLCHILDREN); return TRUE;
         }
-        if(id==IDC_LINEAR || id==IDC_VSYNC || id==IDC_SAVE) {
+        if(id>=IDC_NEAREST && id<=IDC_INTEGER) {
+            if((id==IDC_BILINEAR || id==IDC_SHARP) && SendDlgItemMessageW(h,IDC_RENDERER,CB_GETCURSEL,0,0)!=0) return TRUE;
+            SendDlgItemMessageW(h,IDC_SCALING,CB_SETCURSEL,id-IDC_NEAREST,0);
+            RedrawWindow(h,nullptr,nullptr,RDW_INVALIDATE|RDW_ALLCHILDREN); return TRUE;
+        }
+        if(id==IDC_VSYNC || id==IDC_SAVE) {
             CheckDlgButton(h,id,IsDlgButtonChecked(h,id)==BST_CHECKED?BST_UNCHECKED:BST_CHECKED); return TRUE;
         }
         if (LOWORD(w)==IDC_RENDERER && HIWORD(w)==CBN_SELCHANGE) {
             const bool enabled=SendDlgItemMessageW(h,IDC_RENDERER,CB_GETCURSEL,0,0)==0;
-            EnableWindow(GetDlgItem(h,IDC_LINEAR),enabled); EnableWindow(GetDlgItem(h,IDC_VSYNC),enabled); return TRUE;
+            EnableWindow(GetDlgItem(h,IDC_BILINEAR),enabled); EnableWindow(GetDlgItem(h,IDC_SHARP),enabled); EnableWindow(GetDlgItem(h,IDC_VSYNC),enabled); return TRUE;
         }
         if (LOWORD(w)==IDC_APPLY) { d->apply_settings(); return TRUE; }
         if (LOWORD(w)==IDCANCEL) { SendMessageW(h,WM_CLOSE,0,0); return TRUE; }
@@ -655,7 +675,7 @@ INT_PTR CALLBACK settings_proc(HWND h, UINT msg, WPARAM w, LPARAM l) {
 }
 hq::Viewport Draw::viewport() const {
     RECT r{}; GetClientRect(window,&r);
-    return hq::Viewport::fit(r.right,r.bottom,width,height);
+    return hq::Viewport::fit(r.right,r.bottom,width,height,scaling==hq::Integer);
 }
 void Draw::update_clip() {
     const bool active=!settings && !windowed && IsWindow(window) && !IsIconic(window) && GetForegroundWindow()==window;
@@ -778,7 +798,7 @@ void Draw::present() {
         if (primary->palette) pal=primary->palette->colors();
         if (gpu_enabled) {
             if (!gpu) gpu=std::make_unique<hq::Gpu>();
-            HRESULT hr=gpu->present(window,*primary->image,pal,viewport(),vsync,linear);
+            HRESULT hr=gpu->present(window,*primary->image,pal,viewport(),vsync,scaling);
             if (SUCCEEDED(hr)) {
                 if (!gpu_reported) { log("D3D11 hardware presentation active"); gpu_reported=true; }
                 return;

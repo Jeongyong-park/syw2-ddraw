@@ -17,6 +17,8 @@ jobs:
         run: cmake -S . -B build -A Win32
       - name: Build wrapper and native tests
         run: cmake --build build --config Release
+      - name: Verify DLL version and author
+        run: ./tests/test_version.ps1
       - name: Verify preparation and packaging
         run: python -m unittest discover -s tests -p test_*.py -v
       # Native runtime tests require an interactive desktop and a hardware D3D11

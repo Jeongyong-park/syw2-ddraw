@@ -5,6 +5,7 @@
 #include <stdexcept>
 #include "../src/pixels.h"
 #include "../src/viewport.h"
+#include "../src/scaling.h"
 #include "../src/settings_ids.h"
 
 // Do not use assert: Release builds must execute every check.
@@ -23,6 +24,16 @@ void pixels() {
     auto tall=hq::Viewport::fit(600,1000,800,600);
     CHECK(tall.x==0 && tall.y==275 && tall.width==600 && tall.height==450);
     CHECK(tall.unmap_y(tall.map_y(200))==200);
+    auto integer=hq::Viewport::fit(1920,1080,800,600,true);
+    CHECK(integer.width==800 && integer.height==600 && integer.x==560 && integer.y==240);
+    CHECK(integer.unmap_x(integer.map_x(300))==300);
+    auto big=hq::Viewport::fit(3840,2160,800,600,true);
+    CHECK(big.width==2400 && big.height==1800);
+    auto reduced=hq::Viewport::fit(400,300,800,600,true);
+    CHECK(reduced.width==400 && reduced.height==300);
+    CHECK(hq::parse_scaling(L"",true)==hq::Bilinear);
+    CHECK(hq::parse_scaling(L"integer",true)==hq::Integer);
+    CHECK(hq::parse_scaling(L"bad",true)==hq::Nearest);
     auto tiny=hq::Viewport::fit(0,0,800,600); CHECK(tiny.width>0 && tiny.height>0);
     hq::Palette p{}; p[1]=0xff0000; p[255]=0x123456;
     hq::Image a(3,2,8); CHECK(a.pitch==4);
@@ -206,7 +217,11 @@ int wmain(int argc, wchar_t** argv) {
     CheckDlgButton(settings,IDC_SAVE,BST_UNCHECKED);
     SendDlgItemMessageW(settings,IDC_RENDERER,CB_SETCURSEL,1,0);
     SendMessageW(settings,WM_COMMAND,MAKEWPARAM(IDC_RENDERER,CBN_SELCHANGE),0);
-    CHECK(!IsWindowEnabled(GetDlgItem(settings,IDC_LINEAR)));
+    CHECK(!IsWindowEnabled(GetDlgItem(settings,IDC_BILINEAR)));
+    CHECK(!IsWindowEnabled(GetDlgItem(settings,IDC_SHARP)));
+    CHECK(IsWindowEnabled(GetDlgItem(settings,IDC_INTEGER)));
+    SendMessageW(settings,WM_COMMAND,IDC_INTEGER,0);
+    CHECK(SendDlgItemMessageW(settings,IDC_SCALING,CB_GETCURSEL,0,0)==hq::Integer);
     SendDlgItemMessageW(settings,IDC_MODE,CB_SETCURSEL,1,0);
     SendMessageW(settings,WM_COMMAND,IDC_APPLY,0);
     CHECK(!(GetWindowLongPtrW(window,GWL_STYLE)&WS_CAPTION));
@@ -214,7 +229,7 @@ int wmain(int argc, wchar_t** argv) {
     GetWindowTextW(edit,text,32); CHECK(wcscmp(text,L"HQNET")==0);
     SendDlgItemMessageW(settings,IDC_RENDERER,CB_SETCURSEL,0,0);
     SendDlgItemMessageW(settings,IDC_MODE,CB_SETCURSEL,0,0);
-    CheckDlgButton(settings,IDC_LINEAR,BST_CHECKED);
+    SendMessageW(settings,WM_COMMAND,IDC_BILINEAR,0);
     SendMessageW(settings,WM_COMMAND,IDC_APPLY,0);
     CHECK(GetWindowLongPtrW(window,GWL_STYLE)&WS_CAPTION);
     SendMessageW(settings,WM_CLOSE,0,0);
@@ -226,13 +241,13 @@ int wmain(int argc, wchar_t** argv) {
     SetCursor(prior_cursor);
     SendMessageW(window,WM_SYSCOMMAND,0x1e30,0);
     settings=FindWindowExW(window,nullptr,L"#32770",nullptr);
-    CHECK(settings!=window && IsDlgButtonChecked(settings,IDC_LINEAR)==BST_CHECKED);
+    CHECK(settings!=window && SendDlgItemMessageW(settings,IDC_SCALING,CB_GETCURSEL,0,0)==hq::Bilinear);
     CHECK(SendDlgItemMessageW(settings,IDC_RENDERER,CB_GETCURSEL,0,0)==0);
-    CheckDlgButton(settings,IDC_LINEAR,BST_UNCHECKED); // close discards unapplied choices
+    SendMessageW(settings,WM_COMMAND,IDC_SHARP,0); // close discards unapplied choices
     SendMessageW(settings,WM_CLOSE,0,0);
     SendMessageW(window,WM_SYSCOMMAND,0x1e30,0);
     settings=FindWindowExW(window,nullptr,L"#32770",nullptr);
-    CHECK(IsDlgButtonChecked(settings,IDC_LINEAR)==BST_CHECKED);
+    CHECK(SendDlgItemMessageW(settings,IDC_SCALING,CB_GETCURSEL,0,0)==hq::Bilinear);
     if (argc==3) {
         // Only used with a disposable copy of the DLL/config, never a user's installation.
         CheckDlgButton(settings,IDC_SAVE,BST_CHECKED);
@@ -240,6 +255,9 @@ int wmain(int argc, wchar_t** argv) {
         wchar_t dllpath[32768]{}; GetModuleFileNameW(dll,dllpath,32768);
         std::wstring config(dllpath); config=config.substr(0,config.find_last_of(L"\\/")+1)+L"hqcdd.ini";
         CHECK(GetPrivateProfileIntW(L"Display",L"LinearFilter",-1,config.c_str())==1);
+        wchar_t stored_filter[32]{};
+        GetPrivateProfileStringW(L"Display",L"Scaling",L"",stored_filter,32,config.c_str());
+        CHECK(wcscmp(stored_filter,L"bilinear")==0);
         CHECK(GetPrivateProfileIntW(L"Display",L"Fullscreen",-1,config.c_str())==0);
     }
     // Leave it open to exercise owner/Draw teardown with a live dialog and hook.

@@ -5,5 +5,6 @@ $build = Join-Path $PSScriptRoot 'build'
 if ($LASTEXITCODE -ne 0) { throw 'CMake configure failed' }
 & cmake --build $build --config $Configuration
 if ($LASTEXITCODE -ne 0) { throw 'Build failed' }
+& (Join-Path $PSScriptRoot 'tests/test_version.ps1') -DllPath (Join-Path $build "$Configuration/hqcdd.dll")
 & ctest --test-dir $build -C $Configuration --output-on-failure
 if ($LASTEXITCODE -ne 0) { throw 'Tests failed' }

@@ -7,7 +7,7 @@ using Microsoft::WRL::ComPtr;
 namespace hq {
 static const char shader[]=R"(
 Texture2D<uint> source : register(t0);
-cbuffer Settings : register(b0) { uint w; uint h; uint bits; uint smooth; float4 palette[256]; };
+cbuffer Settings : register(b0) { uint w; uint h; uint bits; uint smooth; float4 palette[256]; float4 scale; };
 struct V { float4 pos:SV_POSITION; float2 uv:TEXCOORD; };
 V vs(uint id:SV_VertexID) {
     V o; o.uv=float2((id<<1)&2,id&2);
@@ -23,8 +23,11 @@ float4 color(int2 p) {
 }
 float4 ps(V i):SV_TARGET {
     float2 p=i.uv*float2(w,h);
-    if(smooth==0) return color(int2(floor(p)));
+    if(smooth==0 || smooth==3) return color(int2(floor(p)));
+    // Integer replication followed by bilinear resampling, evaluated directly.
+    // Interior texels stay sharp; only the transition across a pixel edge blends.
     p-=0.5; int2 q=int2(floor(p)); float2 f=frac(p);
+    if(smooth==2) f=saturate((f-0.5)*scale.xy+0.5);
     return lerp(lerp(color(q),color(q+int2(1,0)),f.x),lerp(color(q+int2(0,1)),color(q+1),f.x),f.y);
 }
 )";
@@ -59,10 +62,10 @@ struct Gpu::Impl {
         if(FAILED(hr)) return hr;
         hr=device->CreateVertexShader(vs->GetBufferPointer(),vs->GetBufferSize(),nullptr,&vertex); if(FAILED(hr)) return hr;
         hr=device->CreatePixelShader(ps->GetBufferPointer(),ps->GetBufferSize(),nullptr,&pixel); if(FAILED(hr)) return hr;
-        D3D11_BUFFER_DESC b{}; b.ByteWidth=16+256*16; b.Usage=D3D11_USAGE_DEFAULT; b.BindFlags=D3D11_BIND_CONSTANT_BUFFER;
+        D3D11_BUFFER_DESC b{}; b.ByteWidth=32+256*16; b.Usage=D3D11_USAGE_DEFAULT; b.BindFlags=D3D11_BIND_CONSTANT_BUFFER;
         return device->CreateBuffer(&b,nullptr,&constants);
     }
-    HRESULT draw(HWND window,const Image& image,const Palette& pal,Viewport v,bool vsync,bool linear,std::vector<uint32_t>* capture) {
+    HRESULT draw(HWND window,const Image& image,const Palette& pal,Viewport v,bool vsync,int scaling,std::vector<uint32_t>* capture) {
         HRESULT hr;
         if(!device) { hr=init(window); if(FAILED(hr)) return hr; }
         RECT r{}; GetClientRect(window,&r); if(r.right<=0 || r.bottom<=0) return S_OK;
@@ -88,8 +91,10 @@ struct Gpu::Impl {
         for(int y=0;y<image.height;++y)
             std::memcpy(static_cast<unsigned char*>(mapped.pData)+y*mapped.RowPitch,image.bytes.data()+y*image.pitch,image.pitch);
         context->Unmap(texture.Get(),0);
-        struct Constants { unsigned w,h,bits,smooth; float palette[256][4]; } c{};
-        c.w=image.width; c.h=image.height; c.bits=image.bpp; c.smooth=linear;
+        struct Constants { unsigned w,h,bits,smooth; float palette[256][4]; float scale[4]; } c{};
+        c.w=image.width; c.h=image.height; c.bits=image.bpp; c.smooth=scaling;
+        c.scale[0]=float(std::max(1,v.width/image.width));
+        c.scale[1]=float(std::max(1,v.height/image.height));
         for(int i=0;i<256;++i) { c.palette[i][0]=((pal[i]>>16)&255)/255.f; c.palette[i][1]=((pal[i]>>8)&255)/255.f; c.palette[i][2]=(pal[i]&255)/255.f; c.palette[i][3]=1; }
         context->UpdateSubresource(constants.Get(),0,nullptr,&c,0,0);
         auto rt=target.Get(); context->OMSetRenderTargets(1,&rt,nullptr);
@@ -121,5 +126,5 @@ struct Gpu::Impl {
 };
 Gpu::Gpu():impl(std::make_unique<Impl>()) {}
 Gpu::~Gpu()=default;
-HRESULT Gpu::present(HWND w,const Image& i,const Palette& p,Viewport v,bool sync,bool linear,std::vector<uint32_t>* capture) { return impl->draw(w,i,p,v,sync,linear,capture); }
+HRESULT Gpu::present(HWND w,const Image& i,const Palette& p,Viewport v,bool sync,int scaling,std::vector<uint32_t>* capture) { return impl->draw(w,i,p,v,sync,scaling,capture); }
 }
