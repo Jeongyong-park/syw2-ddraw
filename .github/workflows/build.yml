@@ -23,3 +23,16 @@ jobs:
         run: python -m unittest discover -s tests -p test_*.py -v
       # Native runtime tests require an interactive desktop and a hardware D3D11
       # device. Run build.ps1 locally; hosted CI only verifies their compilation.
+      - name: Build end-user archive
+        run: python package.py
+      - name: Build developer archive
+        run: python package.py --developer
+      - name: Verify extracted distribution and adjacent DLL import
+        run: ./tests/test_distribution.ps1
+      - uses: actions/upload-artifact@v4
+        with:
+          name: syw2-ddraw-distributions
+          path: |
+            output/*.zip
+            output/*.zip.sha256
+          if-no-files-found: error

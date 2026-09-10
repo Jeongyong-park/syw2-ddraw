@@ -1,4 +1,5 @@
 """Distribution tests use synthetic files, never game assets."""
+import hashlib
 import importlib.util
 from pathlib import Path
 import tempfile
@@ -60,21 +61,43 @@ class PackageTests(unittest.TestCase):
                 path = root / name
                 path.parent.mkdir(parents=True, exist_ok=True)
                 path.write_bytes(content)
-            target = packager.package(root)
-            self.assertTrue(target.parent.samefile(root / 'output'))
-            self.assertEqual(target.name, 'syw2-ddraw-v1.2.3.zip')
-            # Packaging twice must not include the previous archive.
-            packager.package(root)
-            with zipfile.ZipFile(target) as archive:
-                self.assertIsNone(archive.testzip())
-                expected = {'syw2-ddraw/' + name for name in packager.ROOT_FILES}
-                expected.update({
-                    'syw2-ddraw/build/Release/hqcdd.dll',
-                    'syw2-ddraw/src/ddraw.cpp',
-                    'syw2-ddraw/docs/images/settings.png',
-                    'syw2-ddraw/.github/workflows/build.yml',
-                })
-                self.assertEqual(set(archive.namelist()), expected)
+            for developer in (False, True):
+                with self.subTest(developer=developer):
+                    target = packager.package(root, developer=developer)
+                    self.assertTrue(target.parent.samefile(root / 'output'))
+                    suffix = '-developer' if developer else ''
+                    self.assertEqual(target.name, f'syw2-ddraw-v1.2.3{suffix}.zip')
+                    packager.package(root, developer=developer)
+                    sidecar = target.with_suffix('.zip.sha256').read_text()
+                    self.assertEqual(sidecar, f'{hashlib.sha256(target.read_bytes()).hexdigest()}  {target.name}\n')
+                    prefix = 'syw2-ddraw/' if developer else ''
+                    with zipfile.ZipFile(target) as archive:
+                        self.assertIsNone(archive.testzip())
+                        expected = {prefix + name for name in
+                                    (packager.ROOT_FILES if developer else packager.USER_FILES)}
+                        expected.update({prefix + 'docs/images/settings.png',
+                                         prefix + 'SHA256SUMS.txt',
+                                         prefix + 'build/Release/hqcdd.dll' if developer else 'ddraw.dll'})
+                        if developer:
+                            expected.update({prefix + 'src/ddraw.cpp',
+                                             prefix + '.github/workflows/build.yml'})
+                        self.assertEqual(set(archive.namelist()), expected)
+                        sums = archive.read(prefix + 'SHA256SUMS.txt').decode().splitlines()
+                        verified = set()
+                        for line in sums:
+                            digest, name = line.split('  ', 1)
+                            self.assertEqual(digest, hashlib.sha256(archive.read(prefix + name)).hexdigest())
+                            verified.add(prefix + name)
+                        self.assertEqual(verified, expected - {prefix + 'SHA256SUMS.txt'})
+                    previous = target.read_bytes()
+                    install = root / 'INSTALL.txt'
+                    content = install.read_bytes()
+                    install.unlink()
+                    with self.assertRaises(FileNotFoundError):
+                        packager.package(root, developer=developer)
+                    self.assertEqual(target.read_bytes(), previous)
+                    install.write_bytes(content)
+
 
 
 if __name__ == '__main__':

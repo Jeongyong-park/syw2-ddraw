@@ -34,7 +34,9 @@ INI 키와 의미, 기본 DLL 교체 설치·업데이트·복구 절차 및 개
 2. `./build.ps1`과 `python -m unittest discover -s tests -p "test_*.py" -v`를 실행합니다.
 3. `python package.py`로 ZIP을 만들고 DLL 속성과 패키지 내용을 확인합니다.
    게임 폴더에 DLL을 ddraw.dll로 배치한 상태의 실제 실행·설정·종료·복구도 검사합니다.
-   현재 ZIP의 build/Release/hqcdd.dll과 hqcdd.ini가 README의 설치 경로와 일치해야 합니다.
+   사용자 ZIP 루트의 ddraw.dll과 hqcdd.ini가 README의 설치 경로와 일치해야 합니다.
+   `python package.py --developer`로 개발자 ZIP도 생성하고 `tests/test_distribution.ps1`을 실행합니다.
+   두 ZIP 및 각 .zip.sha256을 확인하고 [0.6 실기기 검증](milestone-0.6.md)을 기록합니다.
 4. 확정한 변경을 커밋한 뒤 해당 커밋에 `v<버전>` 태그를 붙여 배포합니다.
 5. 배포한 버전은 같은 이름으로 내용을 바꾸지 않습니다. 변경 시 새 버전을 사용합니다.
 

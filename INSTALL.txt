@@ -1,0 +1,24 @@
+HQCDD 설치 안내
+
+1. 게임을 종료합니다.
+2. 게임 EXE 옆의 기존 ddraw.dll을 다른 이름으로 백업합니다.
+   기존 백업이 있다면 덮어쓰지 마세요.
+3. 이 ZIP의 ddraw.dll과 hqcdd.ini를 게임 EXE 옆에 복사합니다.
+   업데이트할 때는 기존 hqcdd.ini와 최초 DLL 백업을 유지하세요.
+4. 평소 사용하던 원본 또는 충무공넷 게임 EXE를 실행합니다.
+   HQ그래픽.exe 복사본이나 launch.ps1은 사용하지 않습니다.
+
+설정: Ctrl+Alt+D / 창·전체화면: Alt+Enter
+설정 화면을 열어도 게임 진행은 멈추지 않습니다.
+
+복구: 게임 종료 후 설치한 HQCDD ddraw.dll을 제거하고 원래 DLL을 복원합니다.
+원래 ddraw.dll이 없었다면 HQCDD DLL만 제거합니다.
+Windows 시스템 폴더와 원본 EXE·게임 데이터는 변경하지 마세요.
+
+Python, Visual Studio, EXE 패치, 별도 런처는 필요 없습니다.
+기존 dxwrapper/syw2x 기능은 이 DLL로 대체됩니다.
+Windows 10·11 실제 환경 검증은 진행 중입니다.
+
+상세 설명: README.md
+변경 이력: CHANGELOG.md
+문제 신고: https://github.com/Jeongyong-park/syw2-ddraw/issues
