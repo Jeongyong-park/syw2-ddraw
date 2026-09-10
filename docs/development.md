@@ -49,7 +49,7 @@ CI는 Windows x86 컴파일, DLL 메타데이터, Python 설치·패키징 테�
 - gpu_test: 8/16/32비트 readback, 팔레트 변경, 행 간격, 방향, 필터 경계, 정수·비정수·축소 배율.
 - test_prepare: 독립 PE 픽스처로 원본 보존과 잘못된 입력 거부.
 - test_package: 사용자·개발자 ZIP 구성, 내부·외부 SHA-256, 버전 형식, 반복 패키징과 실패 시 기존 ZIP 보존.
-- test_distribution.ps1 / loader_test: 추출한 ZIP의 한글·공백 경로에서 일반 DDRAW.dll import 검증.
+- test_distribution.ps1 / loader_test: 추출한 ZIP의 한글·공백 경로에서 일반 DDRAW.dll import, 시스템 AMStream 로딩 및 레거시 DirectDraw 위임 검증.
 - test_version.ps1: 실제 DLL의 제작자·문자열 버전·숫자 버전 확인.
 
 `wrapper_test.exe <DLL 경로> --save-test`는 DLL 옆 INI에 기록합니다.
@@ -112,7 +112,9 @@ python .\package.py --developer
 
 `test_distribution.ps1`은 사용자 ZIP을 한글·공백이 포함된 임시 폴더에 풀고 DLL 메타데이터를 확인합니다.
 시스템 ddraw import library로 링크한 loader_test.exe가 옆의 ddraw.dll을 자동으로 불러오는지,
-DirectDraw7 생성 및 시스템 클리퍼 위임이 되는지 확인한 뒤 임시 폴더를 정리합니다.
+영상 파일 없이 시스템 amstream.dll 로딩, DirectDrawCreate를 통한 시스템 IDirectDraw 생성,
+DirectDraw7 생성 및 시스템 클리퍼 위임을 확인한 뒤 임시 폴더를 정리합니다.
+영상 제거 여부와 별개로 AMStream의 DDRAW.dll import에 필요한 DirectDrawCreate export를 검사합니다.
 CI에서도 두 ZIP을 생성하고 이 테스트를 실행한 뒤 ZIP과 해시를 아티팩트로 보관합니다.
 이는 실제 게임의 로그인·전투·종료나 개발 도구 없는 Windows 10·11 검증을 대체하지 않습니다.
 남은 실기기 검증과 기록 양식은 [0.6 구현·검증 계획](milestone-0.6.md)에 있습니다.

@@ -34,6 +34,11 @@ DLL을 ddraw.dll로 바꾼 네이티브 통합 테스트에서 로드·COM 객�
 실게임의 운영체제별 DLL 교체 설치·업데이트·복구 검증은 1.0 이후 항목으로 남아 있습니다.
 다른 DirectDraw export를 요구하는 미확인 게임 빌드까지 지원하는 것은 아닙니다.
 
+AMStream은 영상 파일을 열기 전 DLL 로딩 단계에서 DDRAW.dll의 DirectDrawCreate를 요구합니다.
+이 레거시 함수는 절대 시스템 경로의 ddraw.dll로 위임하여 실제 IDirectDraw 객체를 반환합니다.
+게임의 DirectDrawCreateEx/IDirectDraw7 경로는 HQCDD 구현을 유지합니다.
+영상 없는 AMStream 로딩 및 레거시 객체 생성 검사는 실제 영상 재생·코덱 호환성 검증을 대신하지 않습니다.
+
 ## 개발·비교용 별도 시험본
 
 prepare.py는 기존 DLL을 보존하며 EXE 복사본의 import 이름 DDRAW.dll만 hqcdd.dll로 변경합니다.

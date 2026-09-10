@@ -6,6 +6,8 @@
 
 ## [Unreleased]
 
+- amstream.dll이 요구하는 DirectDrawCreate export 누락으로 발생하는 시작 지점 없음 오류 수정. 레거시 DirectDraw 객체는 시스템 DLL로 위임하고 영상 파일 없는 AMStream 로딩 회귀 검사 추가.
+
 ## [0.6.1] — 2026-09-10
 
 ### 수정

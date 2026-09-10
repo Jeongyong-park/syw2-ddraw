@@ -1,3 +1,4 @@
 LIBRARY hqcdd
 EXPORTS
+    DirectDrawCreate=_DirectDrawCreate@12
     DirectDrawCreateEx=_DirectDrawCreateEx@16

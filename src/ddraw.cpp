@@ -25,6 +25,16 @@ namespace {
 std::recursive_mutex mutex;
 using Guard = std::lock_guard<std::recursive_mutex>;
 HMODULE module = nullptr;
+FARPROC system_ddraw_proc(const char* name) {
+    // Keep the system module loaded while delegated COM objects can outlive a call.
+    static HMODULE system=[]() -> HMODULE {
+        wchar_t path[MAX_PATH]{};
+        const UINT length=GetSystemDirectoryW(path,MAX_PATH);
+        if(!length || length>=MAX_PATH || wcscat_s(path,L"\\ddraw.dll")!=0) return nullptr;
+        return LoadLibraryExW(path,nullptr,LOAD_LIBRARY_SEARCH_SYSTEM32);
+    }();
+    return system ? GetProcAddress(system,name) : nullptr;
+}
 std::wstring local_path(const wchar_t* name) {
     wchar_t path[32768]{};
     GetModuleFileNameW(module, path, 32768);
@@ -1078,13 +1088,9 @@ HRESULT Draw::GetGDISurface(IDirectDrawSurface7** out) {
 }
 HRESULT Draw::CreateClipper(DWORD flags, IDirectDrawClipper** out, IUnknown* outer) {
     if (!out) return E_POINTER; *out=nullptr;
-    // Only clippers are delegated. Load the absolute system path, never the game's ddraw.dll.
+    // Use the same absolute system DLL as the legacy multimedia entry point.
     using Fn=HRESULT (WINAPI*)(DWORD,IDirectDrawClipper**,IUnknown*);
-    static Fn fn=[]() -> Fn {
-        wchar_t path[MAX_PATH]{}; GetSystemDirectoryW(path,MAX_PATH);
-        wcscat_s(path,L"\\ddraw.dll"); auto dll=LoadLibraryW(path);
-        return dll ? reinterpret_cast<Fn>(GetProcAddress(dll,"DirectDrawCreateClipper")) : nullptr;
-    }();
+    static Fn fn=reinterpret_cast<Fn>(system_ddraw_proc("DirectDrawCreateClipper"));
     return fn ? fn(flags,out,outer) : E_FAIL;
 }
 HRESULT Draw::CreatePalette(DWORD flags, PALETTEENTRY* e, IDirectDrawPalette** out, IUnknown* outer) {
@@ -1224,6 +1230,13 @@ extern "C" HRESULT WINAPI DirectDrawCreateEx(GUID* guid, void** out, REFIID iid,
     if (guid) return DDERR_INVALIDDIRECTDRAWGUID;
     try { *out=static_cast<IDirectDraw7*>(new Draw); return DD_OK; }
     catch (const std::bad_alloc&) { return E_OUTOFMEMORY; }
+}
+extern "C" HRESULT WINAPI DirectDrawCreate(GUID* guid, IDirectDraw** out, IUnknown* outer) {
+    // AMStream needs the legacy IDirectDraw ABI, not our IDirectDraw7 implementation.
+    using Fn=HRESULT (WINAPI*)(GUID*,IDirectDraw**,IUnknown*);
+    static Fn fn=reinterpret_cast<Fn>(system_ddraw_proc("DirectDrawCreate"));
+    if(!fn) { if(out) *out=nullptr; return E_FAIL; }
+    return fn(guid,out,outer);
 }
 BOOL WINAPI DllMain(HINSTANCE h, DWORD reason, LPVOID) {
     if (reason==DLL_PROCESS_ATTACH) { module=h; DisableThreadLibraryCalls(h); }
