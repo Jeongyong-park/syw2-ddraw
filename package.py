@@ -30,7 +30,9 @@ def package(root: Path) -> Path:
             relative = path.relative_to(root)
             if (path.is_file() and not path.is_symlink()
                     and not EXCLUDED_DIRS.intersection(relative.parts)
-                    and path.suffix in SOURCE_SUFFIXES):
+                    and (path.suffix in SOURCE_SUFFIXES or (
+                        relative.parts[:2] == ('docs', 'images')
+                        and path.suffix.lower() in {'.png', '.jpg', '.jpeg', '.webp'}))):
                 sources.append(path)
     output = root / 'output'
     output.mkdir(exist_ok=True)

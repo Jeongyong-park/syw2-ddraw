@@ -2,7 +2,7 @@
 
 [Semantic Versioning 2.0.0](https://semver.org/spec/v2.0.0.html)을 기준으로 관리합니다.
 호환성 판단 대상은 문서화한 게임 빌드 지원, DirectDraw 연동 동작,
-INI 키와 의미, 준비/실행 도구의 사용 방법입니다. 내부 구현 자체는 공개 API가 아닙니다.
+INI 키와 의미, 기본 DLL 교체 설치·업데이트·복구 절차 및 개발용 준비/실행 도구의 사용 방법입니다. 내부 구현 자체는 공개 API가 아닙니다.
 
 | 변경 | 버전 |
 | --- | --- |
@@ -24,6 +24,7 @@ INI 키와 의미, 준비/실행 도구의 사용 방법입니다. 내부 구현
 - DLL의 FileVersion/ProductVersion 문자열과 시작 로그는 동일한 세 자리 버전을 사용합니다.
 - Windows 숫자 버전은 `MAJOR.MINOR.PATCH.0`입니다. 마지막 0은 SemVer의 별도 버전 요소가 아닙니다.
 - ZIP 이름은 `syw2-ddraw-v<버전>.zip`, Git 태그는 `v<버전>`입니다.
+- DLL 설치 이름은 ddraw.dll이지만 빌드 이름 및 OriginalFilename 속성은 hqcdd.dll입니다. 파일명 변경은 버전을 변경하지 않습니다.
 - 제작자 표시는 LICENSE에 맞춘 Park Jeongyong입니다. Windows 속성에서는 CompanyName에 표시합니다.
   이 정보는 코드 서명이나 인증서의 게시자 신원과 별개입니다.
 
@@ -32,6 +33,8 @@ INI 키와 의미, 준비/실행 도구의 사용 방법입니다. 내부 구현
 1. VERSION을 변경하고 CHANGELOG의 Unreleased 항목을 새 버전으로 이동합니다.
 2. `./build.ps1`과 `python -m unittest discover -s tests -p "test_*.py" -v`를 실행합니다.
 3. `python package.py`로 ZIP을 만들고 DLL 속성과 패키지 내용을 확인합니다.
+   게임 폴더에 DLL을 ddraw.dll로 배치한 상태의 실제 실행·설정·종료·복구도 검사합니다.
+   현재 ZIP의 build/Release/hqcdd.dll과 hqcdd.ini가 README의 설치 경로와 일치해야 합니다.
 4. 확정한 변경을 커밋한 뒤 해당 커밋에 `v<버전>` 태그를 붙여 배포합니다.
 5. 배포한 버전은 같은 이름으로 내용을 바꾸지 않습니다. 변경 시 새 버전을 사용합니다.
 

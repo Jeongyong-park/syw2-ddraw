@@ -1,0 +1,159 @@
+# 개발자 안내
+
+일반 사용자 설치·설정 안내는 [README](../README.md)를 참고합니다.
+이 문서는 저장소에서 DLL을 빌드하고 테스트·패키징하는 개발자를 대상으로 합니다.
+최종 사용자 기본 설치는 DLL 교체 방식입니다. Python과 빌드 도구는 개발·패키징·별도 시험본 생성에만 필요합니다.
+
+## 환경과 빌드
+
+Windows, Visual Studio의 C++ 데스크톱 개발 도구, Windows SDK, CMake 3.24 이상,
+Python 3.10 이상이 필요합니다. 게임 프로세스에 맞춰 DLL은 x86으로 빌드합니다.
+
+저장소 루트에서 실행합니다.
+
+```powershell
+.\build.ps1
+python -m unittest discover -s tests -p "test_*.py" -v
+```
+
+산출물은 `build/Release/hqcdd.dll`입니다. 기본 사용자 설치에서는 이 파일을
+게임 EXE 옆에 `ddraw.dll`로 복사하고 `hqcdd.ini`를 함께 둡니다.
+빌드 산출물 이름을 바꾸거나 EXE를 패치할 필요는 없습니다. MSVC 런타임을 정적 링크합니다.
+Debug는 `.\build.ps1 -Configuration Debug`로 빌드합니다.
+
+빌드만 수행하려면:
+
+```powershell
+cmake -S . -B build -A Win32
+cmake --build build --config Release
+```
+
+D3D11 feature level 11.0 하드웨어에서 GPU 출력을 검증합니다.
+GDI 설정에서도 D3D11/DXGI/D3DCompiler DLL은 로드 시점에 필요합니다.
+GDI 자동 전환은 런타임 DLL 로드 이후 GPU 초기화·출력이 실패한 경우에 적용됩니다.
+
+## 테스트와 CI
+
+| 검증 | 명령·범위 |
+| --- | --- |
+| 네이티브 | `ctest --test-dir build -C Release --output-on-failure` |
+| DLL 속성 | `.\tests\test_version.ps1` |
+| Python | `python -m unittest discover -s tests -p "test_*.py" -v` |
+
+`build.ps1`은 빌드, DLL 버전 검사, 네이티브 테스트를 순서대로 실행합니다.
+네이티브 테스트에는 대화형 데스크톱과 D3D11 하드웨어가 필요하며 테스트 창이 나타납니다.
+CI는 Windows x86 컴파일, DLL 메타데이터, Python 설치·패키징 테스트를 실행합니다.
+호스팅 CI에서 GPU 실행 결과를 검증했다고 간주하지 않습니다.
+
+- wrapper_test: COM 수명, 팔레트·표면 복사, GDI 입력칸, 창 전환, 좌표 변환, 오버레이·F10·커서 회귀.
+- gpu_test: 8/16/32비트 readback, 팔레트 변경, 행 간격, 방향, 필터 경계, 정수·비정수·축소 배율.
+- test_prepare: 독립 PE 픽스처로 원본 보존과 잘못된 입력 거부.
+- test_package: 포함 파일 제한, 경로 정규화, 버전 형식, 반복 패키징.
+- test_version.ps1: 실제 DLL의 제작자·문자열 버전·숫자 버전 확인.
+
+`wrapper_test.exe <DLL 경로> --save-test`는 DLL 옆 INI에 기록합니다.
+반드시 임시 폴더에 복사한 DLL로 실행하고 사용자 설치에는 사용하지 않습니다.
+
+## 설치 방식과 패키징
+
+### 기본 설치: DLL 교체
+
+1. 기존 게임 폴더의 ddraw.dll을 백업합니다.
+2. 빌드한 hqcdd.dll을 게임 EXE 옆에 ddraw.dll로 복사합니다.
+3. hqcdd.ini를 같은 폴더에 두고 기존 EXE를 실행합니다.
+
+기존 dxwrapper/syw2x 경로는 대체됩니다. 사용자 설치의 최초 DLL 백업과 설정을 덮어쓰지 않습니다.
+설정·로그 파일명은 hqcdd.ini/hqcdd.log로 유지되며 설치 기록·런처 해시 검사는 사용하지 않습니다.
+게임 데이터나 시스템 DLL은 수정하지 않습니다.
+
+검증에서는 임시 폴더에 DLL을 ddraw.dll로 복사하여 wrapper_test를 실행했습니다.
+DirectDrawCreateEx export와 시스템 경로의 DirectDraw 클리퍼 위임을 포함한 통합 테스트가 통과했습니다.
+기존 EXE의 자동 DLL 로딩부터 실제 전투·종료까지의 검증은 별도로 수행해야 합니다.
+
+### 별도 시험본: 기존 환경과 비교할 때
+
+prepare.py와 launch.ps1은 기존 DLL을 교체하지 않고 나란히 시험하기 위한 개발 도구입니다.
+일반 사용자 기본 설치 절차에는 포함하지 않습니다.
+
+```powershell
+python .\prepare.py "D:\syw2plus\조선의반격 오리지날 실행 충무공넷.exe" --output-dir ".\output\syw2-graphics-test"
+& ".\output\syw2-graphics-test\launch.ps1"
+```
+
+생성기는 원본 EXE의 import 이름만 바꾼 별도 복사본을 만들고 기존 파일을 덮어쓰지 않습니다.
+생성 런처는 EXE·DLL·런처 해시를 검사하며 INI는 수정 가능 파일로 제외합니다.
+자세한 PE 검증과 주소는 [호환성 자료](compatibility.md)를 참고합니다.
+
+### 패키징
+
+```powershell
+python .\package.py
+```
+
+현재 ZIP은 개발용 소스·도구도 포함하며 DLL은 build/Release/hqcdd.dll에 들어 있습니다.
+README는 사용자가 이 DLL을 ddraw.dll로 복사하는 절차를 안내합니다.
+사용자에게 prepare.py 실행을 필수로 요구하지 않습니다.
+
+패키징은 `VERSION`과 실제 Release DLL의 속성을 비교한 뒤
+`output/syw2-ddraw-v<버전>.zip`을 만듭니다. Git 내부 파일·게임 EXE·기존 산출물은 제외합니다.
+ZIP 생성 중 실패하면 기존 ZIP을 보존합니다.
+소스·문서·문서 이미지·DLL이 포함되므로 새 문서 리소스가 빠지지 않는지 확인하세요.
+
+## 소스 구조
+
+| 경로 | 역할 |
+| --- | --- |
+| `src/ddraw.cpp` | DirectDraw7 COM 객체, Windows 메시지, 입력 훅, 설정·출력 연동 |
+| `src/pixels.*` | 소프트웨어 표면, 팔레트·RGB 변환, 복사·색키 |
+| `src/gpu.*` | D3D11 업로드·색상 변환·확대·readback |
+| `src/viewport.h` | 화면·GDI 자식 컨트롤·마우스의 공통 좌표 변환 |
+| `src/scaling.h` | 확대 방식 이름과 이전 설정 해석 |
+| `src/overlay.*`, `src/settings.*` | 게임 화면 안의 설정 UI |
+| `src/version.*.in` | VERSION에서 생성하는 로그 헤더·Windows 버전 리소스 |
+| `prepare.py`, `launch.ps1` | 개발·비교용 별도 실행본 생성과 검증·실행 |
+| `package.py` | 배포 파일 선택 및 ZIP 생성 |
+
+GDI 입력창과의 호환성을 위해 windowed blt-model swap chain을 사용합니다.
+전체화면은 borderless 방식이고 Alt+Enter는 래퍼가 관리합니다.
+게임의 Lock/Blt 표면은 메모리에 유지하며 최종 출력의 색상 변환·확대를 GPU에서 수행합니다.
+현재 구현은 범용 DirectDraw 대체물이 아니며 지원하지 않는 API는 오류로 처리합니다.
+
+## INI 호환성
+
+설정 파일은 로드된 DLL 옆 `hqcdd.ini`의 `[Display]` 섹션입니다. DLL을 ddraw.dll로 바꿔도 설정·로그 파일명은 바뀌지 않습니다.
+
+| 키 | 기본 배포값 | 의미 |
+| --- | --- | --- |
+| Fullscreen | 0 | 0=창 모드, 1=전체화면 |
+| Renderer | gdi | gdi=GDI, auto=GPU 시도 후 실패 시 GDI |
+| Scaling | nearest | nearest / bilinear / sharp-bilinear / integer |
+| VSync | 0 | GPU Present 수직동기화 |
+| LinearFilter | 0 | Scaling이 없는 이전 설정의 보간 여부 |
+
+Scaling이 없으면 LinearFilter=1을 Bilinear로 해석합니다. 알 수 없는 Scaling 값은 Nearest입니다.
+GDI에서는 보간 방식 선택을 유지하더라도 실제 출력은 Nearest입니다.
+Integer는 정수 배율과 공통 viewport를 사용하고 원본보다 작은 창에서는 비율 유지 축소합니다.
+Sharp Bilinear는 정수 픽셀 복제 후 bilinear 보간의 효과를 직접 계산합니다.
+[알고리즘 참고](https://github.com/rsn8887/Sharp-Bilinear-Shaders).
+
+게임 속도 설정·타이머 값은 변경하지 않습니다. 다중 Present 때문에 VSync가 진행 속도에 영향을 줄 수 있습니다.
+[타이밍 분석](graphics_timing.md)을 참고하고 실제 진행량과 화면 출력 FPS를 구분하세요.
+
+## 문서와 릴리스 관리
+
+- 사용자 안내는 README, 개발 절차는 이 문서, 변경 이력은 CHANGELOG에 기록합니다.
+- [버전 정책](versioning.md)에 따라 VERSION을 갱신하고 다시 빌드합니다.
+- DLL 제작자·제품명·저작권·버전 속성은 파일 정보이며 코드 서명이 아닙니다.
+- 공개된 버전의 자산을 같은 이름으로 바꾸지 않습니다.
+- [1.0 로드맵](https://github.com/Jeongyong-park/syw2-ddraw/issues/12)과 실제 환경별 검증 결과를 구분합니다.
+
+### 스크린샷 갱신
+
+`docs/images/`에는 실제 배포본에서 캡처한 PNG를 보관합니다.
+이미지는 import를 바꾼 별도 시험본으로 촬영했습니다. DLL 교체 설치의 실게임 검증 결과를 의미하지 않습니다.
+현재 사용자 안내 이미지는 0.6.0 HQNET 로그인·채팅·게임방 로비와 로비에서 연 설정 화면입니다.
+설정 화면은 기본 GDI + Nearest 상태이며 값을 변경하거나 저장하지 않고 닫았습니다.
+
+UI가 바뀌면 해당 버전에서 다시 캡처하고 파일명·본문 캡션을 함께 갱신하세요.
+계정·채팅·비밀번호가 보이는 화면을 문서에 넣지 않습니다.
+이미지를 추가할 때 패키지 포함 여부도 검사합니다. 게임 화면의 권리는 게임 권리자에게 있습니다.

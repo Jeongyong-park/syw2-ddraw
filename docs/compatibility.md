@@ -1,4 +1,4 @@
-# 확인한 게임 빌드와 패치 원리
+# 확인한 게임 빌드와 DLL 로딩 방식
 
 
 확인한 대상 SHA-256:
@@ -22,4 +22,19 @@
 다중 모니터/DPI, GPU·Windows 버전별 동작을 추가 확인해야 한다.
 
 
-prepare.py는 원본을 보존하고 PE import 이름 DDRAW.dll만 hqcdd.dll로 변경합니다.
+## 기본 사용자 설치: EXE 수정 없음
+
+확인한 게임 EXE는 DDRAW.dll의 DirectDrawCreateEx를 가져옵니다.
+HQCDD를 EXE 옆에 ddraw.dll로 배치하면 기존 EXE의 import를 그대로 사용할 수 있습니다.
+기존 게임 폴더의 ddraw.dll은 먼저 백업합니다. 시스템 폴더의 DLL은 변경하지 않습니다.
+
+DLL을 ddraw.dll로 바꾼 네이티브 통합 테스트에서 로드·COM 객체·클리퍼·출력·입력을 확인했습니다.
+실게임의 DLL 교체 설치 경로는 Windows 10·11 호환성 검증 항목으로 남아 있습니다.
+다른 DirectDraw export를 요구하는 미확인 게임 빌드까지 지원하는 것은 아닙니다.
+
+## 개발·비교용 별도 시험본
+
+prepare.py는 기존 DLL을 보존하며 EXE 복사본의 import 이름 DDRAW.dll만 hqcdd.dll로 변경합니다.
+이 복사본은 hqcdd.dll이 필요하므로 DLL을 ddraw.dll로만 배치한 기본 설치와 혼용하지 않습니다.
+launch.ps1의 설치 기록·해시 검사는 이 별도 시험본에만 해당합니다.
+기계 코드·HQNET 주소·DirectPlay 설정은 어느 방식에서도 변경하지 않습니다.

@@ -46,6 +46,8 @@ class PackageTests(unittest.TestCase):
             files = {
                 'build/Release/hqcdd.dll': b'wrapper',
                 'src/ddraw.cpp': b'source',
+                'docs/images/settings.png': b'documentation image',
+                'src/game.png': b'not a documentation image',
                 '.github/workflows/build.yml': b'workflow',
                 '.git/config': b'private',
                 'output/game.exe': b'game',
@@ -69,6 +71,7 @@ class PackageTests(unittest.TestCase):
                 expected.update({
                     'syw2-ddraw/build/Release/hqcdd.dll',
                     'syw2-ddraw/src/ddraw.cpp',
+                    'syw2-ddraw/docs/images/settings.png',
                     'syw2-ddraw/.github/workflows/build.yml',
                 })
                 self.assertEqual(set(archive.namelist()), expected)
