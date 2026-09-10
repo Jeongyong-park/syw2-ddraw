@@ -18,8 +18,10 @@
 - [DirectDraw SetPalette](https://learn.microsoft.com/en-us/windows/win32/api/ddraw/nf-ddraw-idirectdrawsurface7-setpalette)
 - [Windows DIB와 RGB 출력](https://learn.microsoft.com/en-us/windows/win32/gdi/device-independent-bitmaps)
 
-운영 배포 전에는 HQNET 채팅·한글 IME, 동영상, 관전 포함 장시간 멀티플레이,
-다중 모니터/DPI, GPU·Windows 버전별 동작을 추가 확인해야 한다.
+운영 배포 전에는 HQNET 채팅·한글 IME, 동영상, 관전 포함 장시간 멀티플레이를 추가 확인해야 한다.
+운영체제별 수동 검증과 GPU·DPI·다중 모니터 환경별 시험은 1.0 이후 후속 작업으로 연기한다.
+Windows 11 동작은 사용자 확인이 있으나 상세 시험 기록은 없고 Windows 10은 장비가 없어 미검증이다.
+미검증 환경에 대한 호환성을 확언하지 않는다.
 
 
 ## 기본 사용자 설치: EXE 수정 없음
@@ -29,7 +31,7 @@ HQCDD를 EXE 옆에 ddraw.dll로 배치하면 기존 EXE의 import를 그대로 
 기존 게임 폴더의 ddraw.dll은 먼저 백업합니다. 시스템 폴더의 DLL은 변경하지 않습니다.
 
 DLL을 ddraw.dll로 바꾼 네이티브 통합 테스트에서 로드·COM 객체·클리퍼·출력·입력을 확인했습니다.
-실게임의 DLL 교체 설치 경로는 Windows 10·11 호환성 검증 항목으로 남아 있습니다.
+실게임의 운영체제별 DLL 교체 설치·업데이트·복구 검증은 1.0 이후 항목으로 남아 있습니다.
 다른 DirectDraw export를 요구하는 미확인 게임 빌드까지 지원하는 것은 아닙니다.
 
 ## 개발·비교용 별도 시험본

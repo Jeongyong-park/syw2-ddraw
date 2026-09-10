@@ -6,6 +6,9 @@
 
 ## [Unreleased]
 
+- 운영체제별 수동 검증을 1.0 이후로 연기하고 Windows 11 사용자 동작 확인과 Windows 10 미검증 범위를 문서·릴리스 안내에 명시.
+- 사용자 ZIP 구성에 맞게 README의 업데이트 대상 파일명을 ddraw.dll로 수정.
+
 - 버전 태그 CI 통과 시 사용자 ZIP·SHA-256을 GitHub Release로 자동 게시. 0.x는 시험판으로 표시.
 - 태그/VERSION 불일치·ZIP 해시 불일치 검사 및 실제 좌표 변환 코드의 Unicorn x86 테스트 추가.
 

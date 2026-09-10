@@ -33,10 +33,10 @@ INI 키와 의미, 기본 DLL 교체 설치·업데이트·복구 절차 및 개
 1. VERSION을 변경하고 CHANGELOG의 Unreleased 항목을 새 버전으로 이동합니다.
 2. `./build.ps1`과 `python -m unittest discover -s tests -p "test_*.py" -v`를 실행합니다.
 3. `python package.py`로 ZIP을 만들고 DLL 속성과 패키지 내용을 확인합니다.
-   게임 폴더에 DLL을 ddraw.dll로 배치한 상태의 실제 실행·설정·종료·복구도 검사합니다.
+   확보한 환경의 실제 실행 결과와 미검증 범위를 기록합니다. 운영체제별 수동 검증은 1.0 이후 후속 작업입니다.
    사용자 ZIP 루트의 ddraw.dll과 hqcdd.ini가 README의 설치 경로와 일치해야 합니다.
    `python package.py --developer`로 개발자 ZIP도 생성하고 `tests/test_distribution.ps1`을 실행합니다.
-   두 ZIP 및 각 .zip.sha256을 확인하고 [0.6 실기기 검증](milestone-0.6.md)을 기록합니다.
+   두 ZIP 및 각 .zip.sha256을 확인하고 [자동 검증 결과와 후속 수동 검증 범위](milestone-0.6.md)를 기록합니다.
 4. 확정한 변경을 커밋한 뒤 해당 커밋에 `v<버전>` 태그를 붙여 배포합니다.
 5. 배포한 버전은 같은 이름으로 내용을 바꾸지 않습니다. 변경 시 새 버전을 사용합니다.
 

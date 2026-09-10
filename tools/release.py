@@ -28,9 +28,12 @@ Source code ZIP은 빌드 DLL이 없는 개발용 소스입니다.
 
 Ctrl+Alt+D: 디스플레이 설정 / Alt+Enter: 창·전체화면 전환.
 상세 설치·복구 안내와 스크린샷은 ZIP의 README.md 및 INSTALL.txt에 있습니다.
+
+검증 범위: Windows 11 동작은 사용자 확인이 있으나 상세 시험 기록은 없으며 Windows 10은 미검증입니다.
+운영체제별 설치·업데이트·복구와 GPU·DPI·다중 모니터 수동 검증은 1.0 이후에 진행합니다.
 """
     if version.startswith("0."):
-        notes += "\n시험 배포입니다. Windows 10·11 전체 호환성 및 실제 게임 설치·복구 검증은 진행 중입니다.\n"
+        notes += "\n시험 배포입니다.\n"
     return archive, checksum, notes, version.startswith("0.")
 
 
