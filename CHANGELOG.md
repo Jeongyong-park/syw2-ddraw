@@ -6,6 +6,9 @@
 
 ## [Unreleased]
 
+- 버전 태그 CI 통과 시 사용자 ZIP·SHA-256을 GitHub Release로 자동 게시. 0.x는 시험판으로 표시.
+- 태그/VERSION 불일치·ZIP 해시 불일치 검사 및 실제 좌표 변환 코드의 Unicorn x86 테스트 추가.
+
 - 사용자 ZIP 루트에 ddraw.dll·hqcdd.ini·INSTALL.txt를 제공하고 개발자 ZIP을 별도로 생성.
 - ZIP 전체 및 내부 파일 SHA-256, 추출 후 한글·공백 경로의 일반 DLL import 검사와 CI 아티팩트 추가.
 - 0.6 이슈별 구현 계획과 Windows 10·11 실기기 설치·업데이트·복구 검증표 추가.

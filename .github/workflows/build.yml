@@ -3,7 +3,15 @@ name: build
 on:
   push:
     branches: [main]
+    tags: ['v*']
   pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
   windows-build:
@@ -13,10 +21,14 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
+      - name: Install CPU emulator
+        run: python -m pip install unicorn==2.1.4
       - name: Configure Windows x86
         run: cmake -S . -B build -A Win32
       - name: Build wrapper and native tests
         run: cmake --build build --config Release
+      - name: Test production coordinate transform in Unicorn
+        run: python tests/unicorn_viewport.py
       - name: Verify DLL version and author
         run: ./tests/test_version.ps1
       - name: Verify preparation and packaging
@@ -29,6 +41,12 @@ jobs:
         run: python package.py --developer
       - name: Verify extracted distribution and adjacent DLL import
         run: ./tests/test_distribution.ps1
+      - name: Validate release assets and tag (no publishing)
+        shell: pwsh
+        run: |
+          $tag = 'v' + (Get-Content VERSION -Raw).Trim()
+          if ($env:GITHUB_REF_TYPE -eq 'tag') { $tag = $env:GITHUB_REF_NAME }
+          python tools/release.py --tag $tag
       - uses: actions/upload-artifact@v4
         with:
           name: syw2-ddraw-distributions
@@ -36,3 +54,24 @@ jobs:
             output/*.zip
             output/*.zip.sha256
           if-no-files-found: error
+
+  release:
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    needs: windows-build
+    runs-on: windows-2022
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/download-artifact@v4
+        with:
+          name: syw2-ddraw-distributions
+          path: output
+      - name: Publish verified user ZIP to GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: python tools/release.py --tag $env:GITHUB_REF_NAME --publish

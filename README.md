@@ -42,7 +42,8 @@ HQNET 로그인·채팅 입력칸이 사라지거나 깜빡이는 문제도 개�
 - **최종사용자 배포 ZIP `syw2-ddraw-v<버전>.zip`**. GitHub의 **Source code (zip)**에는 빌드 DLL이 없습니다.
 
 **Python·PowerShell 명령·Visual Studio·EXE 패치는 필요 없습니다.**
-현재 공개 GitHub Release는 없습니다. 시험 참여자는 제작자가 제공한 DLL 포함 ZIP을 사용하세요.
+[배포 페이지](https://github.com/Jeongyong-park/syw2-ddraw/releases)의 **Assets**에서 사용자 ZIP을 선택하세요.
+`0.x`는 **Pre-release(시험판)**로 표시됩니다. 아직 배포 항목이 없으면 제작자가 제공한 시험 ZIP을 사용하세요.
 
 충무공넷을 이용한다면 평소 사용하던 충무공넷 EXE를 그대로 사용합니다.
 이 도구는 서버 주소·계정·VPN·게임방 연결 방식을 변경하지 않습니다.

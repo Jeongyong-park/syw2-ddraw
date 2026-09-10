@@ -55,6 +55,15 @@ CI는 Windows x86 컴파일, DLL 메타데이터, Python 설치·패키징 테�
 `wrapper_test.exe <DLL 경로> --save-test`는 DLL 옆 INI에 기록합니다.
 반드시 임시 폴더에 복사한 DLL로 실행하고 사용자 설치에는 사용하지 않습니다.
 
+## Unicorn CPU 검증
+
+`python -m pip install unicorn==2.1.4` 후 `python tests/unicorn_viewport.py`를 실행합니다.
+Release 빌드의 테스트 전용 unicorn_probe.dll에서 실제 src/viewport.h 코드를 x86으로 실행합니다.
+화면 비율·정수 배율·축소·0 크기·좌표 경계와 고정 시드 무작위 입력을 포함한 1,008개 사례를 유리수 기준값과 비교합니다.
+Windows API나 DllMain을 실행하지 않으며 GDI·IME·GPU·게임 진행 속도·Windows 10/11 호환성 검증은 아닙니다.
+테스트 DLL은 배포 ZIP에 포함하지 않습니다. CI에서도 같은 검사를 수행합니다.
+참고: [Unicorn 문서](https://www.unicorn-engine.org/docs/).
+
 ## 설치 방식과 패키징
 
 ### 기본 설치: DLL 교체
