@@ -189,6 +189,8 @@ int wmain(int argc, wchar_t** argv) {
     auto hidden=CreateWindowW(L"EDIT",L"hidden",WS_CHILD,0,0,10,10,window,nullptr,wc.hInstance,nullptr);
     auto clipped=CreateWindowW(L"EDIT",L"clipped",WS_CHILD|WS_CLIPSIBLINGS,0,0,10,10,window,nullptr,wc.hInstance,nullptr);
     CHECK(hidden && clipped);
+    CHECK(!(GetWindowLongPtrW(edit,GWL_STYLE)&WS_CLIPSIBLINGS));
+    CHECK(!(GetWindowLongPtrW(hidden,GWL_STYLE)&WS_CLIPSIBLINGS));
     SetFocus(edit);
     SendMessageW(edit,EM_SETSEL,1,4);
     const auto prior_cursor=SetCursor(nullptr);
@@ -219,6 +221,7 @@ int wmain(int argc, wchar_t** argv) {
     CHECK(group);
     auto nested=CreateWindowW(L"EDIT",L"nested",WS_CHILD|WS_VISIBLE,1,1,15,10,group,nullptr,wc.hInstance,nullptr);
     CHECK(nested); check_covered(nested);
+    CHECK(!(GetWindowLongPtrW(nested,GWL_STYLE)&WS_CLIPSIBLINGS));
     DestroyWindow(group); DestroyWindow(during);
     using ShowFn=int (WINAPI*)(BOOL);
     auto real_show=reinterpret_cast<ShowFn>(GetProcAddress(GetModuleHandleW(L"user32.dll"),"ShowCursor"));
@@ -265,6 +268,9 @@ int wmain(int argc, wchar_t** argv) {
     check_covered(edit);
     SendMessageW(settings,WM_CLOSE,0,0);
     CHECK(!IsWindow(settings) && GetFocus()==edit);
+    CHECK(!(GetWindowLongPtrW(edit,GWL_STYLE)&WS_CLIPSIBLINGS));
+    CHECK(!(GetWindowLongPtrW(hidden,GWL_STYLE)&WS_CLIPSIBLINGS));
+    CHECK(GetWindowLongPtrW(clipped,GWL_STYLE)&WS_CLIPSIBLINGS);
     CHECK(IsWindowVisible(edit) && !IsWindowVisible(hidden));
     DWORD selection_start=0,selection_end=0;
     SendMessageW(edit,EM_GETSEL,reinterpret_cast<WPARAM>(&selection_start),reinterpret_cast<LPARAM>(&selection_end));
@@ -277,12 +283,23 @@ int wmain(int argc, wchar_t** argv) {
     CHECK(GetCursor()==nullptr);
     while(restored_count<initial_cursor_count) restored_count=real_show(TRUE);
     SetCursor(prior_cursor);
+    // Preserve style changes made by the game between overlay sessions.
+    SetWindowLongPtrW(hidden,GWL_STYLE,GetWindowLongPtrW(hidden,GWL_STYLE)|WS_CLIPSIBLINGS);
     SendMessageW(window,WM_SYSCOMMAND,0x1e30,0);
     settings=FindWindowExW(window,nullptr,L"#32770",nullptr);
     CHECK(settings!=window && SendDlgItemMessageW(settings,IDC_SCALING,CB_GETCURSEL,0,0)==hq::Bilinear);
     CHECK(SendDlgItemMessageW(settings,IDC_RENDERER,CB_GETCURSEL,0,0)==0);
     SendMessageW(settings,WM_COMMAND,IDC_SHARP,0); // close discards unapplied choices
     SendMessageW(settings,WM_CLOSE,0,0);
+    CHECK(GetWindowLongPtrW(hidden,GWL_STYLE)&WS_CLIPSIBLINGS);
+    SetWindowLongPtrW(hidden,GWL_STYLE,GetWindowLongPtrW(hidden,GWL_STYLE)&~LONG_PTR(WS_CLIPSIBLINGS));
+    SendMessageW(window,WM_SYSCOMMAND,0x1e30,0);
+    settings=FindWindowExW(window,nullptr,L"#32770",nullptr);
+    CHECK(settings); check_covered(edit);
+    CHECK(DestroyWindow(settings)); // external dialog destruction also restores styles
+    CHECK(!(GetWindowLongPtrW(edit,GWL_STYLE)&WS_CLIPSIBLINGS));
+    CHECK(!(GetWindowLongPtrW(hidden,GWL_STYLE)&WS_CLIPSIBLINGS));
+    CHECK(GetWindowLongPtrW(clipped,GWL_STYLE)&WS_CLIPSIBLINGS);
     SendMessageW(window,WM_SYSCOMMAND,0x1e30,0);
     settings=FindWindowExW(window,nullptr,L"#32770",nullptr);
     CHECK(SendDlgItemMessageW(settings,IDC_SCALING,CB_GETCURSEL,0,0)==hq::Bilinear);

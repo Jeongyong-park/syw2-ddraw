@@ -82,6 +82,7 @@ struct Child {
     LOGFONTW font{};
     int font_height=0, font_width=0;
     bool original_clip_siblings=false;
+    bool overlay_clipping=false;
 };
 std::set<Surface*> surfaces;
 std::set<Palette*> palettes;
@@ -145,6 +146,8 @@ public:
     void add_child(HWND child);
     void remove_child(HWND child, bool restore);
     void fit_child(HWND child);
+    void update_child_clipping(HWND child);
+    void update_children_clipping();
     RECT child_rect(HWND child, RECT logical) const;
     void update_clip();
     bool hotkey(UINT msg, WPARAM w, LPARAM l);
@@ -569,6 +572,7 @@ void Draw::open_settings() {
     opening_settings=false;
     if (!settings) { log("settings creation failed: %lu",GetLastError()); return; }
     settings_window=settings;
+    sync_children();
     update_clip();
     ShowWindow(settings,SW_SHOW); SetFocus(GetDlgItem(settings,IDC_WINDOWED));
     begin_overlay_cursor();
@@ -579,6 +583,7 @@ void Draw::close_settings() {
     HWND h=settings; settings=nullptr;
     if (settings_window==h) settings_window=nullptr;
     if (IsWindow(h)) DestroyWindow(h);
+    update_children_clipping();
     overlay.background.clear();
     if(IsWindow(window)) RedrawWindow(window,nullptr,nullptr,RDW_INVALIDATE|RDW_ALLCHILDREN);
 }
@@ -678,6 +683,7 @@ INT_PTR CALLBACK settings_proc(HWND h, UINT msg, WPARAM w, LPARAM l) {
         end_overlay_cursor();
         if (settings_window==h) settings_window=nullptr;
         d->settings=nullptr;
+        d->update_children_clipping();
     }
     return FALSE;
 }
@@ -751,12 +757,9 @@ void Draw::add_child(HWND h) {
     c.original_font=reinterpret_cast<HFONT>(SendMessageW(h,WM_GETFONT,0,0));
     if (!c.original_font) c.original_font=static_cast<HFONT>(GetStockObject(DEFAULT_GUI_FONT));
     GetObjectW(c.original_font,sizeof(c.font),&c.font);
-    const auto style=GetWindowLongPtrW(h,GWL_STYLE);
-    c.original_clip_siblings=(style&WS_CLIPSIBLINGS)!=0;
     children.emplace(h,c);
     if (!SetWindowSubclass(h,child_proc,1,reinterpret_cast<DWORD_PTR>(this))) { children.erase(h); return; }
-    // Native EDIT repaint/GetDC must not paint over higher sibling windows.
-    SetWindowLongPtrW(h,GWL_STYLE,style|WS_CLIPSIBLINGS);
+    update_child_clipping(h);
     if (settings) SetWindowPos(settings,HWND_TOP,0,0,0,0,SWP_NOMOVE|SWP_NOSIZE|SWP_NOACTIVATE);
     // Defer positioning until CreateWindow/WM_CREATE has fully returned.
     PostMessageW(window,WM_HQ_LAYOUT,0,0);
@@ -767,12 +770,32 @@ void Draw::remove_child(HWND h, bool restore) {
     children.erase(it);
     if (restore && IsWindow(h)) {
         RemoveWindowSubclass(h,child_proc,1);
-        if (!c.original_clip_siblings)
-            SetWindowLongPtrW(h,GWL_STYLE,GetWindowLongPtrW(h,GWL_STYLE)&~LONG_PTR(WS_CLIPSIBLINGS));
+        if (c.overlay_clipping) {
+            const auto style=GetWindowLongPtrW(h,GWL_STYLE)&~LONG_PTR(WS_CLIPSIBLINGS);
+            SetWindowLongPtrW(h,GWL_STYLE,style|(c.original_clip_siblings?WS_CLIPSIBLINGS:0));
+        }
         SendMessageW(h,WM_SETFONT,reinterpret_cast<WPARAM>(c.original_font),TRUE);
         SetWindowPos(h,nullptr,c.logical.left,c.logical.top,c.logical.right-c.logical.left,c.logical.bottom-c.logical.top,SWP_NOZORDER|SWP_NOACTIVATE);
     }
     if (c.scaled_font) DeleteObject(c.scaled_font);
+}
+void Draw::update_child_clipping(HWND h) {
+    auto it=children.find(h); if (it==children.end() || !IsWindow(h)) return;
+    auto& c=it->second;
+    // Only the game's direct children are siblings of the full-client overlay.
+    const bool enabled=IsWindow(settings) && GetParent(h)==window;
+    if (enabled==c.overlay_clipping) return;
+    const auto style=GetWindowLongPtrW(h,GWL_STYLE);
+    if (enabled) c.original_clip_siblings=(style&WS_CLIPSIBLINGS)!=0;
+    c.overlay_clipping=enabled;
+    SetWindowLongPtrW(h,GWL_STYLE,(style&~LONG_PTR(WS_CLIPSIBLINGS))|
+        ((enabled || c.original_clip_siblings)?WS_CLIPSIBLINGS:0));
+}
+void Draw::update_children_clipping() {
+    // Do not enumerate/register windows while the settings dialog is being destroyed.
+    std::vector<HWND> list;
+    for (const auto& entry:children) list.push_back(entry.first);
+    for (auto h:list) update_child_clipping(h);
 }
 void Draw::fit_child(HWND h) {
     auto it=children.find(h); if (it==children.end()) return;
@@ -801,7 +824,10 @@ void Draw::sync_children() {
     EnumChildWindows(window,[](HWND h,LPARAM data)->BOOL { reinterpret_cast<Draw*>(data)->add_child(h); return TRUE; },reinterpret_cast<LPARAM>(this));
     std::vector<HWND> list;
     for (auto& entry:children) list.push_back(entry.first);
-    for (auto h:list) { if (IsWindow(h)) fit_child(h); else remove_child(h,false); }
+    for (auto h:list) {
+        if (IsWindow(h)) { update_child_clipping(h); fit_child(h); }
+        else remove_child(h,false);
+    }
 }
 void Draw::present() {
     if (presenting || layout_busy || !primary || primary->busy() || !IsWindow(window) || IsIconic(window)) return;
