@@ -12,6 +12,16 @@
 #define CHECK(x) do { if (!(x)) { std::fprintf(stderr,"FAIL line %d: %s\n",__LINE__,#x); std::exit(1); } } while (0)
 #define OK(x) CHECK((x)==DD_OK)
 int production_keys=0;
+void check_covered(HWND child) {
+    // The full-client settings overlay must clip even direct GDI writes to EDITs.
+    CHECK(IsWindowVisible(child));
+    RedrawWindow(child,nullptr,nullptr,RDW_INVALIDATE|RDW_ERASE|RDW_UPDATENOW);
+    HDC dc=GetDC(child); CHECK(dc);
+    RECT visible{};
+    const int region=GetClipBox(dc,&visible);
+    ReleaseDC(child,dc);
+    CHECK(region==NULLREGION);
+}
 LRESULT CALLBACK game_proc(HWND h,UINT msg,WPARAM w,LPARAM l) {
     if(w==VK_F10 && (msg==WM_KEYDOWN || msg==WM_KEYUP || msg==WM_SYSKEYDOWN || msg==WM_SYSKEYUP)) { ++production_keys; return 0; }
     return DefWindowProcW(h,msg,w,l);
@@ -176,7 +186,11 @@ int wmain(int argc, wchar_t** argv) {
         DispatchMessageW(&key);
     }
     CHECK(production_keys==4 && !FindWindowExW(window,nullptr,L"#32770",nullptr));
+    auto hidden=CreateWindowW(L"EDIT",L"hidden",WS_CHILD,0,0,10,10,window,nullptr,wc.hInstance,nullptr);
+    auto clipped=CreateWindowW(L"EDIT",L"clipped",WS_CHILD|WS_CLIPSIBLINGS,0,0,10,10,window,nullptr,wc.hInstance,nullptr);
+    CHECK(hidden && clipped);
     SetFocus(edit);
+    SendMessageW(edit,EM_SETSEL,1,4);
     const auto prior_cursor=SetCursor(nullptr);
     const int initial_cursor_count=ShowCursor(TRUE)-1; ShowCursor(FALSE);
     int hidden_cursor_count=ShowCursor(FALSE);
@@ -191,6 +205,21 @@ int wmain(int argc, wchar_t** argv) {
     CHECK(queued.message==WM_NULL); // thread hook consumes the key before the game's dispatch
     auto settings=FindWindowExW(window,nullptr,L"#32770",nullptr);
     CHECK(settings && settings!=window && GetDlgItem(settings,IDC_APPLY));
+    check_covered(edit);
+    CHECK(!IsWindowVisible(hidden));
+    // A login/chat control may be raised, shown, or created during a frame.
+    SetWindowPos(edit,HWND_TOP,0,0,0,0,SWP_NOMOVE|SWP_NOSIZE|SWP_NOACTIVATE);
+    CHECK(GetWindow(window,GW_CHILD)==settings);
+    check_covered(edit);
+    ShowWindow(edit,SW_HIDE); ShowWindow(edit,SW_SHOWNOACTIVATE);
+    check_covered(edit);
+    auto during=CreateWindowW(L"EDIT",L"during",WS_CHILD|WS_VISIBLE,10,10,20,12,window,nullptr,wc.hInstance,nullptr);
+    CHECK(during); check_covered(during);
+    auto group=CreateWindowW(L"STATIC",L"",WS_CHILD|WS_VISIBLE,0,0,30,20,window,nullptr,wc.hInstance,nullptr);
+    CHECK(group);
+    auto nested=CreateWindowW(L"EDIT",L"nested",WS_CHILD|WS_VISIBLE,1,1,15,10,group,nullptr,wc.hInstance,nullptr);
+    CHECK(nested); check_covered(nested);
+    DestroyWindow(group); DestroyWindow(during);
     using ShowFn=int (WINAPI*)(BOOL);
     auto real_show=reinterpret_cast<ShowFn>(GetProcAddress(GetModuleHandleW(L"user32.dll"),"ShowCursor"));
     CHECK(real_show);
@@ -225,6 +254,7 @@ int wmain(int argc, wchar_t** argv) {
     SendDlgItemMessageW(settings,IDC_MODE,CB_SETCURSEL,1,0);
     SendMessageW(settings,WM_COMMAND,IDC_APPLY,0);
     CHECK(!(GetWindowLongPtrW(window,GWL_STYLE)&WS_CAPTION));
+    check_covered(edit);
     GetClientRect(settings,&overlayrect); GetClientRect(window,&gameclient); CHECK(EqualRect(&overlayrect,&gameclient));
     GetWindowTextW(edit,text,32); CHECK(wcscmp(text,L"HQNET")==0);
     SendDlgItemMessageW(settings,IDC_RENDERER,CB_SETCURSEL,0,0);
@@ -232,8 +262,16 @@ int wmain(int argc, wchar_t** argv) {
     SendMessageW(settings,WM_COMMAND,IDC_BILINEAR,0);
     SendMessageW(settings,WM_COMMAND,IDC_APPLY,0);
     CHECK(GetWindowLongPtrW(window,GWL_STYLE)&WS_CAPTION);
+    check_covered(edit);
     SendMessageW(settings,WM_CLOSE,0,0);
     CHECK(!IsWindow(settings) && GetFocus()==edit);
+    CHECK(IsWindowVisible(edit) && !IsWindowVisible(hidden));
+    DWORD selection_start=0,selection_end=0;
+    SendMessageW(edit,EM_GETSEL,reinterpret_cast<WPARAM>(&selection_start),reinterpret_cast<LPARAM>(&selection_end));
+    CHECK(selection_start==1 && selection_end==4);
+    childdc=GetDC(edit); CHECK(childdc); RECT restored_clip{};
+    CHECK(GetClipBox(childdc,&restored_clip)>NULLREGION); ReleaseDC(edit,childdc);
+    GetWindowTextW(edit,text,32); CHECK(wcscmp(text,L"HQNET")==0);
     int restored_count=real_show(TRUE)-1; real_show(FALSE);
     CHECK(restored_count==hidden_cursor_count-1);
     CHECK(GetCursor()==nullptr);
@@ -265,6 +303,9 @@ int wmain(int argc, wchar_t** argv) {
     clipper->Release();
     // Releasing Draw first must not invalidate surfaces or palettes.
     CHECK(d->Release()>0); back->Release(); front->Release(); CHECK(pal->Release()==0);
+    CHECK(!(GetWindowLongPtrW(hidden,GWL_STYLE)&WS_CLIPSIBLINGS));
+    CHECK(GetWindowLongPtrW(clipped,GWL_STYLE)&WS_CLIPSIBLINGS);
+    CHECK(!IsWindowVisible(hidden) && !IsWindowVisible(clipped));
     DestroyWindow(window); UnregisterClassW(wc.lpszClassName,wc.hInstance);
     FreeLibrary(dll);
     CHECK(!IsWindow(settings));

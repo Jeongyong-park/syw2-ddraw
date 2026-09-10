@@ -81,6 +81,7 @@ struct Child {
     HFONT original_font=nullptr, scaled_font=nullptr;
     LOGFONTW font{};
     int font_height=0, font_width=0;
+    bool original_clip_siblings=false;
 };
 std::set<Surface*> surfaces;
 std::set<Palette*> palettes;
@@ -447,6 +448,13 @@ LRESULT CALLBACK child_proc(HWND h, UINT msg, WPARAM w, LPARAM l, UINT_PTR, DWOR
     if (d->hotkey(msg,w,l)) return 0; // Alt+Enter also works with the ID/IME control focused
     if (msg==WM_PARENTNOTIFY && LOWORD(w)==WM_CREATE) d->add_child(reinterpret_cast<HWND>(l));
     auto it=d->children.find(h);
+    if (msg==WM_WINDOWPOSCHANGING && d->settings && GetParent(h)==d->window) {
+        auto pos=reinterpret_cast<WINDOWPOS*>(l);
+        // Game controls may be raised or created while the overlay is open.
+        if (!(pos->flags&SWP_NOZORDER) &&
+            (pos->hwndInsertAfter==HWND_TOP || pos->hwndInsertAfter==HWND_TOPMOST || pos->hwndInsertAfter==HWND_NOTOPMOST))
+            pos->hwndInsertAfter=d->settings;
+    }
     if (it!=d->children.end() && !d->layout_busy) {
         auto& child=it->second;
         if (msg==WM_WINDOWPOSCHANGING) {
@@ -743,8 +751,13 @@ void Draw::add_child(HWND h) {
     c.original_font=reinterpret_cast<HFONT>(SendMessageW(h,WM_GETFONT,0,0));
     if (!c.original_font) c.original_font=static_cast<HFONT>(GetStockObject(DEFAULT_GUI_FONT));
     GetObjectW(c.original_font,sizeof(c.font),&c.font);
+    const auto style=GetWindowLongPtrW(h,GWL_STYLE);
+    c.original_clip_siblings=(style&WS_CLIPSIBLINGS)!=0;
     children.emplace(h,c);
     if (!SetWindowSubclass(h,child_proc,1,reinterpret_cast<DWORD_PTR>(this))) { children.erase(h); return; }
+    // Native EDIT repaint/GetDC must not paint over higher sibling windows.
+    SetWindowLongPtrW(h,GWL_STYLE,style|WS_CLIPSIBLINGS);
+    if (settings) SetWindowPos(settings,HWND_TOP,0,0,0,0,SWP_NOMOVE|SWP_NOSIZE|SWP_NOACTIVATE);
     // Defer positioning until CreateWindow/WM_CREATE has fully returned.
     PostMessageW(window,WM_HQ_LAYOUT,0,0);
 }
@@ -754,6 +767,8 @@ void Draw::remove_child(HWND h, bool restore) {
     children.erase(it);
     if (restore && IsWindow(h)) {
         RemoveWindowSubclass(h,child_proc,1);
+        if (!c.original_clip_siblings)
+            SetWindowLongPtrW(h,GWL_STYLE,GetWindowLongPtrW(h,GWL_STYLE)&~LONG_PTR(WS_CLIPSIBLINGS));
         SendMessageW(h,WM_SETFONT,reinterpret_cast<WPARAM>(c.original_font),TRUE);
         SetWindowPos(h,nullptr,c.logical.left,c.logical.top,c.logical.right-c.logical.left,c.logical.bottom-c.logical.top,SWP_NOZORDER|SWP_NOACTIVATE);
     }
