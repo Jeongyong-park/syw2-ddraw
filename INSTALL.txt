@@ -17,7 +17,8 @@ Windows 시스템 폴더와 원본 EXE·게임 데이터는 변경하지 마세�
 
 Python, Visual Studio, EXE 패치, 별도 런처는 필요 없습니다.
 기존 dxwrapper/syw2x 기능은 이 DLL로 대체됩니다.
-Windows 10·11 실제 환경 검증은 진행 중입니다.
+Windows 11 동작은 사용자 확인이 있으며 Windows 10은 미검증입니다.
+운영체제별 설치·업데이트·복구 수동 검증은 1.0 이후에 진행합니다.
 
 상세 설명: README.md
 변경 이력: CHANGELOG.md
