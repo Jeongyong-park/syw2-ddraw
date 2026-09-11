@@ -28,6 +28,18 @@ class CompareTests(unittest.TestCase):
             r=report.compare(root)
             self.assertEqual(r['conditions'],[]); self.assertTrue(r['incomplete'])
             self.assertIn('Completed 0/1',report.render(r))
+    def test_cursor_sweep_is_not_pooled_or_paired_with_unscripted_runs(self):
+        with tempfile.TemporaryDirectory() as d:
+            root=Path(d); (root/'manifest.json').write_text('{"jobs":[{},{},{}]}')
+            for i,(sweep,trace,cpu) in enumerate(((True,True,30),(False,True,20),(False,False,18))):
+                run=root/f'run-{i:02d}'; run.mkdir()
+                (run/'result.json').write_text(json.dumps(dict(valid=True,renderer='auto',scaling='nearest',
+                    vsync=0,fullscreen=0,cursor_sweep=sweep,trace_enabled=trace,cpu_percent_one_core=cpu)))
+            r=report.compare(root)
+            self.assertEqual(len(r['conditions']),3)
+            self.assertEqual(len(r['trace_comparisons']),1)
+            self.assertFalse(r['trace_comparisons'][0]['cursor_sweep'])
+            self.assertEqual(r['trace_comparisons'][0]['cpu_delta_percentage_points'],2)
     def test_trace_off_is_separate_and_has_no_internal_timings(self):
         with tempfile.TemporaryDirectory() as d:
             root=Path(d); (root/'manifest.json').write_text('{"jobs":[{}]}')

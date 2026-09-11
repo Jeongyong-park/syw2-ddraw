@@ -1,7 +1,7 @@
 """Windows main-menu comparison runner. Copies the game; never edits the source install.
 
 Dry-run is the default. --run opens game windows; leave them foreground during capture.
-No automatic mouse movement, login, saved-game loading or photon latency measurement.
+Optional cursor sweep moves without clicking. No login, saved-game loading or photon latency measurement.
 """
 import argparse
 import configparser
@@ -18,6 +18,7 @@ import time
 from perf_report import summarize
 from perf_compare import compare, render
 from presentmon_report import summarize_presentmon
+from perf_cursor import CursorSweep
 
 MODES=[('gdi','nearest',0),('auto','nearest',0),('auto','bilinear',0),
        ('auto','sharp-bilinear',0),('auto','sharp-bilinear',1)]
@@ -62,6 +63,7 @@ def main():
     p.add_argument('--window-only',action='store_true',help='Restrict the matrix to windowed runs')
     p.add_argument('--case',action='append',help='Select renderer:scaling:vsync:fullscreen; repeat to select several')
     p.add_argument('--trace-mode',choices=['on','off','both'],default='on')
+    p.add_argument('--cursor-sweep',action='store_true',help='Move cursor horizontally, hold, reverse and hold; abort on focus loss or user movement')
     p.add_argument('--run',action='store_true')
     a=p.parse_args()
     if a.presentmon_api_only and not a.presentmon: p.error('--presentmon-api-only requires --presentmon')
@@ -72,11 +74,11 @@ def main():
     if target.exists() or target.is_relative_to(source.parent): p.error('Output must be new and outside the source game folder')
     try: jobs=select_jobs(a.repeats,a.case,a.window_only,a.trace_mode)
     except ValueError as e: p.error(str(e))
-    manifest=dict(scene='main-menu; manual cursor movement only',seed=600,exe_sha256=digest(source),
+    manifest=dict(scene='main-menu; scene must be verified separately',cursor_sweep=a.cursor_sweep,seed=600,exe_sha256=digest(source),
                   dll_sha256=digest(dll),warmup=a.warmup,seconds=a.seconds,jobs=jobs,
                   runner_sha256=digest(Path(__file__)),
                   presentmon_tracking='api-only' if a.presentmon_api_only else 'full',
-                  limits='No 1:1 window sizing, deterministic battle, mouse playback, or photon measurement')
+                  limits='No 1:1 window sizing, deterministic battle, or photon measurement; synthetic cursor sweep is not hardware latency')
     if not a.run:
         print(json.dumps(manifest,indent=2)); return
     if os.name!='nt': p.error('--run requires Windows')
@@ -134,7 +136,7 @@ def main():
         if job['trace_enabled']: env['HQCDD_PERF_FILE']=str(trace)
         log_path=game/'hqcdd.log'; log_start=log_path.stat().st_size if log_path.exists() else 0
         process=subprocess.Popen([str(game/source.name)],cwd=game,env=env)
-        monitor=None; monitor_log=None; result=dict(job,pid=process.pid,foreground_lost=False,
+        monitor=None; monitor_log=None; sweep=None; result=dict(job,pid=process.pid,foreground_lost=False,cursor_sweep=a.cursor_sweep,
             presentmon_tracking=manifest['presentmon_tracking'])
         print(f'Run {index+1}/{len(jobs)}: {job}',flush=True)
         try:
@@ -157,6 +159,10 @@ def main():
                     '--session_name',f'HQCDD-{process.pid}-{index}', '--output_file',str(run/'presentmon.csv')]
                     +presentmon_tracking_args(a.presentmon_api_only),
                     creationflags=subprocess.CREATE_NO_WINDOW,stdout=monitor_log,stderr=subprocess.STDOUT)
+            if a.cursor_sweep:
+                if not observer_context: raise RuntimeError('Cursor sweep requires physical per-monitor coordinates')
+                if len(visible)!=1: raise RuntimeError('Cursor sweep requires exactly one visible game window')
+                sweep=CursorSweep(u,visible[0],process.pid,qpc)
             start=qpc(); cpu_start=cpu_ms(process); wall_start=time.perf_counter(); until=wall_start+a.seconds
             while time.perf_counter()<until:
                 if process.poll() is not None: raise RuntimeError('Game exited during capture')
@@ -168,7 +174,8 @@ def main():
                     rect=w.RECT(); u.GetWindowRect(initial['hwnd'],c.byref(rect))
                     if [rect.left,rect.top,rect.right,rect.bottom]!=initial['window_rect']:
                         result['geometry_changed']=True
-                time.sleep(.1)
+                if sweep: sweep.step(time.perf_counter()-wall_start)
+                time.sleep(.008 if sweep else .1)
             end=qpc(); wall_seconds=time.perf_counter()-wall_start
             result.update(start_qpc=start,end_qpc=end,cpu_ms=cpu_ms(process)-cpu_start,wall_seconds=wall_seconds)
             result['cpu_percent_one_core']=result['cpu_ms']/(wall_seconds*10)
@@ -178,6 +185,12 @@ def main():
         except Exception as e:
             result['error']=str(e)
         finally:
+            if sweep:
+                result['cursor_injections']=len(sweep.events)
+                (run/'cursor-injections.json').write_text(json.dumps(dict(columns=['before_qpc','after_qpc','screen_x','screen_y'],events=sweep.events,
+                    note='SendInput acceptance timestamps; not game processing or display timestamps'),indent=2),encoding='utf-8')
+                try: sweep.restore()
+                except Exception as e: result['cursor_restore_error']=str(e)
             for hwnd in windows(process.pid): u.PostMessageW(hwnd,0x10,0,0) # WM_CLOSE, own child only
             try: process.wait(timeout=15)
             except subprocess.TimeoutExpired:

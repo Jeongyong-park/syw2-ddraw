@@ -18,7 +18,7 @@ def compare(root):
             if run.get('presentmon_error'): reasons.append('presentmon_schema_error')
             invalid.append(dict(run=path.parent.name,reasons=reasons or ['invalid_capture']))
             continue
-        key=(run['renderer'],run['scaling'],run['vsync'],run['fullscreen'],run.get('trace_enabled',True))
+        key=(run['renderer'],run['scaling'],run['vsync'],run['fullscreen'],run.get('trace_enabled',True),run.get('cursor_sweep',False))
         groups.setdefault(key,[]).append(run)
     rows=[]
     for key,runs in sorted(groups.items()):
@@ -34,7 +34,7 @@ def compare(root):
             # Multiple streams require explicit window attribution; never sum them.
             if len(streams)==1 and streams[0].get('displayed_fps') is not None:
                 display_rates.append(streams[0]['displayed_fps'])
-        rows.append(dict(renderer=key[0],scaling=key[1],vsync=key[2],fullscreen=key[3],trace_enabled=key[4],
+        rows.append(dict(renderer=key[0],scaling=key[1],vsync=key[2],fullscreen=key[3],trace_enabled=key[4],cursor_sweep=key[5],
             repetitions=len(runs),
             median_run_p95_cpu_ms=statistics.median(d['p95_ms'] for d in durations) if durations else None,
             min_run_p95_cpu_ms=min(d['p95_ms'] for d in durations) if durations else None,
@@ -48,9 +48,9 @@ def compare(root):
     pairs=[]
     for on in rows:
         if not on['trace_enabled']: continue
-        off=next((row for row in rows if not row['trace_enabled'] and all(row[k]==on[k] for k in ('renderer','scaling','vsync','fullscreen'))),None)
+        off=next((row for row in rows if not row['trace_enabled'] and all(row[k]==on[k] for k in ('renderer','scaling','vsync','fullscreen','cursor_sweep'))),None)
         if off and on['median_cpu_percent_one_core'] is not None and off['median_cpu_percent_one_core'] is not None:
-            pairs.append(dict(renderer=on['renderer'],scaling=on['scaling'],vsync=on['vsync'],fullscreen=on['fullscreen'],
+            pairs.append(dict(renderer=on['renderer'],scaling=on['scaling'],vsync=on['vsync'],fullscreen=on['fullscreen'],cursor_sweep=on['cursor_sweep'],
                 on_runs=on['repetitions'],off_runs=off['repetitions'],
                 cpu_delta_percentage_points=on['median_cpu_percent_one_core']-off['median_cpu_percent_one_core'],
                 note='Observed median difference, includes run-to-run noise; not proof of exact instrumentation overhead.'))
@@ -66,6 +66,7 @@ def render(report):
     body=[]
     for r in rows:
         label=f"{r['renderer']} / {r['scaling']} / VSync {r['vsync']} / {'fullscreen' if r['fullscreen'] else 'window'} / trace {'on' if r['trace_enabled'] else 'off'}"
+        label+=f" / cursor {'sweep' if r.get('cursor_sweep') else 'unscripted'}"
         value=r['median_run_p95_cpu_ms']; width=0 if value is None else value/maximum*100
         rate=r['median_api_calls_hz']
         displayed=r.get('median_etw_displayed_fps')
