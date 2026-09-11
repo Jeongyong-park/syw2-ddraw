@@ -6,11 +6,25 @@ import tempfile
 import unittest
 from unittest.mock import Mock, patch
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'tools'))
-from perf_matrix import select_jobs, save_cursor_capture
+from perf_matrix import select_jobs, save_cursor_capture, wait_for_scene
 
 RUNNER=Path(__file__).resolve().parents[1]/'tools/perf_matrix.py'
 
 class PerfMatrixTests(unittest.TestCase):
+    def test_scene_gate_requires_positive_verification(self):
+        with tempfile.TemporaryDirectory() as d:
+            root=Path(d); process=Mock(pid=42)
+            (root/'ready.json').write_text('{"scene_verified":false}')
+            with self.assertRaisesRegex(RuntimeError,'not verified'): wait_for_scene(root,process,'battle')
+            (root/'ready.json').write_text('{"scene_verified":true,"evidence":"battle.png"}')
+            self.assertEqual(wait_for_scene(root,process,'battle')['evidence'],'battle.png')
+            self.assertEqual(json.loads((root/'awaiting-ready.json').read_text())['pid'],42)
+    def test_scene_gate_stops_on_exit_or_timeout(self):
+        with tempfile.TemporaryDirectory() as d:
+            root=Path(d); process=Mock(pid=42); process.poll.return_value=0
+            with self.assertRaisesRegex(RuntimeError,'exited'): wait_for_scene(root,process,'battle')
+            process.poll.return_value=None
+            with self.assertRaisesRegex(RuntimeError,'timed out'): wait_for_scene(root,process,'battle',timeout=0)
     def test_cursor_save_failure_preserves_capture_error_and_restores(self):
         sweep=Mock(events=[(1,2,3,4,1)]); result={'error':'Game lost foreground'}
         with patch.object(Path,'write_text',side_effect=OSError('disk full')):

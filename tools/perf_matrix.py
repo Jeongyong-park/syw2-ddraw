@@ -44,6 +44,18 @@ def tool_hashes():
         'presentmon_report.py','perf_cursor.py','perf_input_report.py')}
 
 
+def wait_for_scene(run, process, scene, timeout=600):
+    (run/'awaiting-ready.json').write_text(json.dumps(dict(pid=process.pid,scene=scene)),encoding='utf-8')
+    deadline=time.monotonic()+timeout
+    while not (run/'ready.json').exists():
+        if process.poll() is not None: raise RuntimeError('Game exited while waiting for scene')
+        if time.monotonic()>=deadline: raise RuntimeError('Scene readiness timed out')
+        time.sleep(.2)
+    ready=json.loads((run/'ready.json').read_text(encoding='utf-8'))
+    if ready.get('scene_verified') is not True: raise RuntimeError('Scene was not verified')
+    return ready
+
+
 def save_cursor_capture(sweep, run, result):
     if sweep is None: return
     result['cursor_injections']=len(sweep.events)
@@ -87,6 +99,8 @@ def main():
     p.add_argument('--case',action='append',help='Select renderer:scaling:vsync:fullscreen; repeat to select several')
     p.add_argument('--trace-mode',choices=['on','off','both'],default='on')
     p.add_argument('--cursor-sweep',action='store_true',help='Move cursor horizontally, hold, reverse and hold; abort on focus loss or user movement')
+    p.add_argument('--scene',default='main-menu; scene must be verified separately',help='Describe the actual scene and workload')
+    p.add_argument('--wait-for-ready',action='store_true',help='Wait up to 600 seconds for each run/ready.json before warmup; JSON must contain scene_verified=true')
     p.add_argument('--run',action='store_true')
     a=p.parse_args()
     if a.presentmon_api_only and not a.presentmon: p.error('--presentmon-api-only requires --presentmon')
@@ -97,7 +111,7 @@ def main():
     if target.exists() or target.is_relative_to(source.parent): p.error('Output must be new and outside the source game folder')
     try: jobs=select_jobs(a.repeats,a.case,a.window_only,a.trace_mode)
     except ValueError as e: p.error(str(e))
-    manifest=dict(scene='main-menu; scene must be verified separately',cursor_sweep=a.cursor_sweep,seed=600,exe_sha256=digest(source),
+    manifest=dict(scene=a.scene,wait_for_ready=a.wait_for_ready,cursor_sweep=a.cursor_sweep,seed=600,exe_sha256=digest(source),
                   dll_sha256=digest(dll),warmup=a.warmup,seconds=a.seconds,jobs=jobs,
                   runner_sha256=digest(Path(__file__)),
                   tools_sha256=tool_hashes(),python_version=sys.version,
@@ -165,9 +179,11 @@ def main():
         log_path=game/'hqcdd.log'; log_start=log_path.stat().st_size if log_path.exists() else 0
         process=subprocess.Popen([str(game/source.name)],cwd=game,env=env)
         monitor=None; monitor_log=None; sweep=None; result=dict(job,pid=process.pid,foreground_lost=False,cursor_sweep=a.cursor_sweep,
-            presentmon_tracking=manifest['presentmon_tracking'],settings_sha256=settings_hash)
+            presentmon_tracking=manifest['presentmon_tracking'],settings_sha256=settings_hash,scene=a.scene)
         print(f'Run {index+1}/{len(jobs)}: {job}',flush=True)
         try:
+            if a.wait_for_ready:
+                result['scene_verification']=wait_for_scene(run,process,a.scene)
             time.sleep(a.warmup)
             if process.poll() is not None: raise RuntimeError('Game exited during warmup')
             visible=[hwnd for hwnd in windows(process.pid) if u.IsWindowVisible(hwnd)]
