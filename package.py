@@ -8,10 +8,10 @@ import tempfile
 import zipfile
 
 ROOT_FILES = (
-    '.gitignore', 'LICENSE', 'README.md', 'INSTALL.txt', 'CMakeLists.txt', 'build.ps1',
-    'VERSION', 'CHANGELOG.md', 'exports.def', 'hqcdd.ini', 'launch.ps1', 'prepare.py', 'package.py',
+    '.gitignore', 'LICENSE', 'README.md', 'INSTALL.txt', 'ASI-INSTALL.txt', 'CMakeLists.txt', 'build.ps1',
+    'VERSION', 'CHANGELOG.md', 'exports.def', 'exports-asi.def', 'hqcdd.ini', 'launch.ps1', 'prepare.py', 'package.py',
 )
-USER_FILES = ('LICENSE', 'README.md', 'INSTALL.txt', 'VERSION', 'CHANGELOG.md', 'hqcdd.ini')
+USER_FILES = ('LICENSE', 'README.md', 'INSTALL.txt', 'ASI-INSTALL.txt', 'VERSION', 'CHANGELOG.md', 'hqcdd.ini')
 SOURCE_DIRS = ('.github', 'src', 'tests', 'docs', 'tools')
 SOURCE_SUFFIXES = {'.cpp', '.h', '.rc', '.py', '.md', '.yml', '.yaml', '.in', '.ps1'}
 EXCLUDED_DIRS = {'.git', 'build', 'output', '__pycache__'}
@@ -27,9 +27,10 @@ def atomic_write(path: Path, data: bytes) -> None:
         temporary.unlink(missing_ok=True)
 
 
-def package(root: Path, developer: bool = False) -> Path:
+def package(root: Path, developer: bool = False, asi: bool = False) -> Path:
     root = root.resolve()
-    dll = root / 'build/Release/hqcdd.dll'
+    if developer and asi: raise ValueError('Choose either developer or ASI distribution')
+    dll = root / ('build/Release/hqcdd.asi' if asi else 'build/Release/hqcdd.dll')
     if not dll.is_file():
         raise FileNotFoundError(f'Build the Release wrapper first: {dll}')
     version = (root / 'VERSION').read_text(encoding='utf-8').strip()
@@ -49,14 +50,15 @@ def package(root: Path, developer: bool = False) -> Path:
     # Read all inputs first: missing required documentation must not replace a good ZIP.
     prefix = 'syw2-ddraw/' if developer else ''
     entries = {prefix + p.relative_to(root).as_posix(): p.read_bytes() for p in sources}
-    entries[prefix + 'build/Release/hqcdd.dll' if developer else 'ddraw.dll'] = dll.read_bytes()
+    if asi: entries['INSTALL.txt'] = (root / 'ASI-INSTALL.txt').read_bytes()
+    entries[prefix + 'build/Release/hqcdd.dll' if developer else 'plugins/hqcdd.asi' if asi else 'ddraw.dll'] = dll.read_bytes()
     entries[prefix + 'SHA256SUMS.txt'] = ''.join(
         f'{hashlib.sha256(data).hexdigest()}  {name.removeprefix(prefix)}\n'
         for name, data in sorted(entries.items())
     ).encode('utf-8')
     output = root / 'output'
     output.mkdir(exist_ok=True)
-    kind = '-developer' if developer else ''
+    kind = '-developer' if developer else '-asi' if asi else ''
     target = output / f'syw2-ddraw-v{version}{kind}.zip'
     with tempfile.NamedTemporaryFile(dir=output, suffix='.tmp', delete=False) as f:
         temporary = Path(f.name)
@@ -75,10 +77,12 @@ def package(root: Path, developer: bool = False) -> Path:
 if __name__ == '__main__':
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument('--developer', action='store_true', help='Include build sources and test tools')
+    ap.add_argument('--asi', action='store_true', help='Build an ASI-only archive for an existing ASI loader')
     args = ap.parse_args()
     root = Path(__file__).resolve().parent
     subprocess.run([
         'powershell.exe', '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File',
         str(root / 'tests/test_version.ps1'),
+        '-DllPath', str(root / ('build/Release/hqcdd.asi' if args.asi else 'build/Release/hqcdd.dll')),
     ], check=True)
-    print(package(root, developer=args.developer))
+    print(package(root, developer=args.developer, asi=args.asi))

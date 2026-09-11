@@ -181,3 +181,14 @@ Sharp Bilinear는 정수 픽셀 복제 후 bilinear 보간의 효과를 직접 �
 UI가 바뀌면 해당 버전에서 다시 캡처하고 파일명·본문 캡션을 함께 갱신하세요.
 계정·채팅·비밀번호가 보이는 화면을 문서에 넣지 않습니다.
 이미지를 추가할 때 패키지 포함 여부도 검사합니다. 게임 화면의 권리는 게임 권리자에게 있습니다.
+# 기본 릴리즈 산출물
+
+다음 새 버전부터 `python package.py --asi`의 `syw2-ddraw-v<버전>-asi.zip`과
+체크섬만 GitHub Release에 게시합니다. 일반 DLL ZIP과 개발용 ZIP은 CI 산출물로 유지합니다.
+`python tools/release.py --tag v<버전>`은 게시 없이 태그, 체크섬, ASI ZIP 필수 파일과
+로더·SYW2X 바이너리 미포함을 검증합니다. 실제 게시에는 `--publish`가 필요합니다.
+기존 릴리즈는 덮어쓰지 않습니다. 버전 변경 없이 기존 v0.6.2 태그를 재생성하지 마세요.
+
+CI는 `tests/test_distribution.ps1`로 DLL 호환판과 ASI ZIP을 한글·공백 경로에 풀고
+실제 DirectDraw import 연결을 검사합니다. 게임 설치 폴더는 사용하지 않습니다.
+설치 및 DLL판에서 이전하는 절차는 [README](../README.md)와 [ASI 안내](../ASI-INSTALL.txt)를 따릅니다.

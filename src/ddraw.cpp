@@ -22,7 +22,11 @@
 #include "overlay.h"
 #include "perf.h"
 #include "osd.h"
+#include "syw2x.h"
 #include "frame_change.h"
+#ifdef HQCDD_ASI
+#include "asi_hook.h"
+#endif
 
 namespace {
 std::recursive_mutex mutex;
@@ -42,7 +46,13 @@ std::wstring local_path(const wchar_t* name) {
     wchar_t path[32768]{};
     GetModuleFileNameW(module, path, 32768);
     std::wstring s(path);
-    return s.substr(0, s.find_last_of(L"\\/") + 1) + name;
+    auto directory=s.substr(0,s.find_last_of(L"\\/"));
+#ifdef HQCDD_ASI
+    const auto last=directory.find_last_of(L"\\/");
+    if(last!=std::wstring::npos && _wcsicmp(directory.c_str()+last+1,L"plugins")==0)
+        directory.resize(last);
+#endif
+    return directory+L"\\"+name;
 }
 void log(const char* format, ...) {
     Guard lock(mutex);
@@ -78,6 +88,7 @@ bool hook_cursor(Draw* draw);
 LRESULT CALLBACK window_proc(HWND,UINT,WPARAM,LPARAM,UINT_PTR,DWORD_PTR);
 LRESULT CALLBACK child_proc(HWND,UINT,WPARAM,LPARAM,UINT_PTR,DWORD_PTR);
 constexpr UINT WM_HQ_LAYOUT=WM_APP+0x6d0;
+constexpr UINT WM_HQ_ACTIVATION=WM_APP+0x6d1;
 constexpr UINT MENU_FULLSCREEN=0x1e10, MENU_WINDOWED=0x1e20, MENU_SETTINGS=0x1e30, MENU_OSD=0x1e40, MENU_BENCH=0x1e50;
 INT_PTR CALLBACK settings_proc(HWND,UINT,WPARAM,LPARAM);
 LRESULT CALLBACK settings_keys(int,WPARAM,LPARAM);
@@ -131,7 +142,10 @@ public:
     bool gpu_preferred=true;
     hq::Overlay overlay;
     hq::PerformanceOsd osd;
+    hq::Syw2xConfig syw2x;
     bool initial_osd=false;
+    bool game_activation_delivered=false;
+    bool activation_pending=false;
     bool opening_settings=false;
     hq::FrameChange frame_change;
     hq::Rect probe_region{};
@@ -407,6 +421,14 @@ public:
     UNSUP(GetLOD, (DWORD*))
 };
 
+struct ActivationReference {
+    Draw* draw;
+    explicit ActivationReference(Draw* value):draw(value) { draw->AddRef(); }
+    ~ActivationReference() { draw->Release(); }
+    ActivationReference(const ActivationReference&)=delete;
+    ActivationReference& operator=(const ActivationReference&)=delete;
+};
+
 LRESULT CALLBACK window_proc(HWND h, UINT msg, WPARAM w, LPARAM l, UINT_PTR, DWORD_PTR data) {
     if (msg==WM_MOUSEMOVE && hq::perf::recorder().enabled && !InSendMessage()) {
         const auto tag=static_cast<DWORD>(GetMessageExtraInfo());
@@ -441,6 +463,25 @@ LRESULT CALLBACK window_proc(HWND h, UINT msg, WPARAM w, LPARAM l, UINT_PTR, DWO
     }
     if (msg==WM_PARENTNOTIFY && LOWORD(w)==WM_CREATE) d->add_child(reinterpret_cast<HWND>(l));
     if (msg==WM_HQ_LAYOUT) { d->sync_children(); d->present(); return 0; }
+    if (msg==WM_HQ_ACTIVATION) {
+        d->activation_pending=false;
+        // Recheck after Windows finishes activation. ESL rejects WM_ACTIVATEAPP
+        // if GetForegroundWindow still names a popup or the previous application.
+        if(!d->game_activation_delivered && GetForegroundWindow()==h &&
+           IsWindowVisible(h) && IsWindowEnabled(h) && !IsIconic(h) && !d->settings) {
+            const ActivationReference lifetime(d);
+            d->game_activation_delivered=true;
+            DefSubclassProc(h,WM_ACTIVATEAPP,TRUE,0);
+            if(d->window!=h || !IsWindow(h)) return 0;
+            log("Game activation restored after foreground transition");
+            d->osd.suspend(false);
+            d->update_clip(); InvalidateRect(h,nullptr,FALSE);
+        }
+        return 0;
+    }
+    if(msg==WM_ACTIVATE && LOWORD(w)!=WA_INACTIVE && !d->activation_pending) {
+        d->activation_pending=PostMessageW(h,WM_HQ_ACTIVATION,0,0)!=FALSE;
+    }
     if (msg==WM_SIZE || msg==WM_MOVE) {
         if(msg==WM_SIZE && d->settings && !d->layout_busy) d->overlay.layout(d->settings);
         // Do not expose the physical presentation size to legacy game logic.
@@ -466,6 +507,14 @@ LRESULT CALLBACK window_proc(HWND h, UINT msg, WPARAM w, LPARAM l, UINT_PTR, DWO
         d->sync_children(); d->update_clip(); d->present(); return 0;
     }
     if (msg==WM_ACTIVATEAPP) {
+        const ActivationReference lifetime(d);
+        d->game_activation_delivered=w && GetForegroundWindow()==h && !IsIconic(h);
+        // Let the game see the activation before OSD visibility work can reenter
+        // window activation. Do not synthesize periodic activation notifications.
+        const auto result=DefSubclassProc(h,msg,w,l);
+        if(d->window!=h || !IsWindow(h)) return result;
+        if(w && !d->game_activation_delivered && !d->activation_pending)
+            d->activation_pending=PostMessageW(h,WM_HQ_ACTIVATION,0,0)!=FALSE;
         hq::perf::mark("app_activation",w?1:0);
         if(d->probe_enabled) {
             d->frame_change.reset(); d->probe_resume=hq::PerformanceOsd::now()+250;
@@ -474,6 +523,7 @@ LRESULT CALLBACK window_proc(HWND h, UINT msg, WPARAM w, LPARAM l, UINT_PTR, DWO
         d->osd.suspend(!w || d->settings!=nullptr);
         if (!w && d->clip_owned) { ClipCursor(nullptr); d->clip_owned=false; }
         if (w) { d->update_clip(); InvalidateRect(h,nullptr,FALSE); }
+        return result;
     }
     if (msg==WM_ERASEBKGND) return 1; // present paints both the image and letterbox bars
     if (msg==WM_PAINT) {
@@ -707,7 +757,21 @@ INT_PTR CALLBACK settings_proc(HWND h, UINT msg, WPARAM w, LPARAM l) {
         CheckDlgButton(h,IDC_SAVE,BST_CHECKED);
         EnableWindow(GetDlgItem(h,IDC_VSYNC),d->gpu_preferred);
         SetDlgItemTextW(h,IDC_STATUS,L"게임은 계속 진행됩니다.  ·  Esc 또는 닫기 버튼으로 닫기");
+        const auto syw_path=local_path(L"syw2x.ini");
+        const bool loaded=GetModuleHandleW(L"syw2x.asi") || GetModuleHandleW(L"syw2x.dll");
+        const auto plugin_attributes=GetFileAttributesW(local_path(L"plugins\\syw2x.asi").c_str());
+        const bool installed=plugin_attributes!=INVALID_FILE_ATTRIBUTES && !(plugin_attributes&FILE_ATTRIBUTE_DIRECTORY);
+        d->overlay.syw2x_available=d->syw2x.load(syw_path) && (installed || loaded);
+        d->overlay.syw2x_state=loaded?L"플러그인 로드됨 · 저장값은 재시작 후 적용":
+            installed?L"설치됨 · 현재 로드되지 않음 (ASI 로더 확인)":L"SYW2X 미설치 · 기존 배포본의 플러그인이 필요합니다";
+        d->overlay.syw2x_status=!d->syw2x.readable?L"syw2x.ini를 읽을 수 없습니다. 파일 권한을 확인하세요.":
+            d->syw2x.existed?L"설정 파일의 저장값입니다. 현재 실행 중인 값과 다를 수 있습니다.":L"설정 파일이 없어 기본값을 표시합니다. 저장 시 새 파일을 만듭니다.";
         d->overlay.init(h);
+        for(int i=0;i<12;++i) {
+            if(i<4) CheckDlgButton(h,IDC_SYW2X_FIRST+i,
+                hq::Syw2xConfig::valid(d->syw2x.values[i],1) && std::wcstoull(d->syw2x.values[i].c_str(),nullptr,0)?BST_CHECKED:BST_UNCHECKED);
+            else SetDlgItemTextW(h,IDC_SYW2X_FIRST+i,d->syw2x.values[i].c_str());
+        }
         EnableWindow(GetDlgItem(h,IDC_BILINEAR),d->gpu_preferred);
         EnableWindow(GetDlgItem(h,IDC_SHARP),d->gpu_preferred);
         return TRUE;
@@ -722,6 +786,30 @@ INT_PTR CALLBACK settings_proc(HWND h, UINT msg, WPARAM w, LPARAM l) {
     if(msg==WM_DRAWITEM) { d->overlay.button(h,*reinterpret_cast<DRAWITEMSTRUCT*>(l)); return TRUE; }
     if (msg==WM_COMMAND) {
         int id=LOWORD(w);
+        if(d->overlay.palette_command(h,id,HIWORD(w))) return TRUE;
+        if(id==IDC_TAB_DISPLAY || id==IDC_TAB_SYW2X) {
+            d->overlay.syw2x_page=id==IDC_TAB_SYW2X;
+            d->overlay.layout(h); SetFocus(GetDlgItem(h,id)); return TRUE;
+        }
+        if(id>=IDC_SYW2X_FIRST && id<IDC_SYW2X_FIRST+4) {
+            if(d->overlay.syw2x_available) CheckDlgButton(h,id,IsDlgButtonChecked(h,id)==BST_CHECKED?BST_UNCHECKED:BST_CHECKED);
+            return TRUE;
+        }
+        if(id==IDC_APPLY && d->overlay.syw2x_page) {
+            if(!d->overlay.syw2x_available) return TRUE;
+            auto next=d->syw2x.values;
+            for(int i=0;i<12;++i) {
+                if(i<4) {
+                    const bool before=hq::Syw2xConfig::valid(next[i],1) && std::wcstoull(next[i].c_str(),nullptr,0)!=0;
+                    const bool checked=IsDlgButtonChecked(h,IDC_SYW2X_FIRST+i)==BST_CHECKED;
+                    if(before!=checked) next[i]=checked?L"1":L"0";
+                } else {
+                    wchar_t value[256]{}; GetDlgItemTextW(h,IDC_SYW2X_FIRST+i,value,256); next[i]=value;
+                }
+            }
+            d->syw2x.save(next,d->overlay.syw2x_status);
+            InvalidateRect(h,nullptr,FALSE); return TRUE;
+        }
         if(id==IDC_WINDOWED || id==IDC_FULLSCREEN || id==IDC_GPU || id==IDC_GDI) {
             bool mode=id==IDC_WINDOWED || id==IDC_FULLSCREEN;
             SendDlgItemMessageW(h,mode?IDC_MODE:IDC_RENDERER,CB_SETCURSEL,(id==IDC_WINDOWED || id==IDC_GPU)?0:1,0);
@@ -1354,6 +1442,43 @@ extern "C" HRESULT WINAPI DirectDrawCreate(GUID* guid, IDirectDraw** out, IUnkno
     if(!fn) { if(out) *out=nullptr; return E_FAIL; }
     return fn(guid,out,outer);
 }
+extern "C" BOOL __cdecl HQCDD_IsWrapper() { return TRUE; }
+#ifdef HQCDD_ASI
+extern "C" void __cdecl InitializeASI() {
+    // Ultimate ASI Loader calls this after restoring its startup IAT hooks.
+    // This initialization must run before the game's first DirectDraw creation.
+    static std::once_flag once;
+    std::call_once(once,[] {
+        auto imported=GetModuleHandleW(L"ddraw.dll");
+        if(!imported || GetModuleHandleW(L"ddrawHooked.dll") || GetModuleHandleW(L"hqcdd.dll") ||
+           GetProcAddress(imported,"HQCDD_IsWrapper")) {
+            log("ASI disabled: missing DDRAW or duplicate/chained wrapper"); return;
+        }
+        // Support the tested ASI loader, or system DDRAW for explicit test hosts.
+        wchar_t path[32768]{},system[MAX_PATH]{};
+        GetModuleFileNameW(imported,path,32768); GetSystemDirectoryW(system,MAX_PATH);
+        std::wstring expected=std::wstring(system)+L"\\ddraw.dll";
+        if(!GetProcAddress(imported,"IsUltimateASILoader") && _wcsicmp(path,expected.c_str())!=0) {
+            log("ASI disabled: unrecognized DDRAW provider"); return;
+        }
+        auto slot=hq::draw_import(GetModuleHandleW(nullptr));
+        if(!slot || !*slot) { log("ASI disabled: unsupported main EXE DirectDraw import"); return; }
+        if(*slot!=reinterpret_cast<void*>(GetProcAddress(imported,"DirectDrawCreateEx"))) {
+            log("ASI disabled: DirectDraw import already intercepted"); return;
+        }
+        auto replacement=reinterpret_cast<void*>(&DirectDrawCreateEx);
+        // Keep callbacks valid for the process lifetime; no live unload switch.
+        HMODULE pinned=nullptr;
+        if(!GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS|GET_MODULE_HANDLE_EX_FLAG_PIN,
+            reinterpret_cast<LPCWSTR>(&InitializeASI),&pinned)) { log("ASI disabled: pin failed"); return; }
+        DWORD old=0;
+        if(!VirtualProtect(slot,sizeof(void*),PAGE_READWRITE,&old)) { log("ASI disabled: IAT protection failed"); return; }
+        InterlockedExchangePointer(slot,replacement);
+        DWORD ignored=0; const bool restored=VirtualProtect(slot,sizeof(void*),old,&ignored)!=FALSE;
+        log("ASI active: main EXE DirectDrawCreateEx connected; protection_restored=%d",restored);
+    });
+}
+#endif
 BOOL WINAPI DllMain(HINSTANCE h, DWORD reason, LPVOID) {
     if (reason==DLL_PROCESS_ATTACH) { module=h; DisableThreadLibraryCalls(h); }
     return TRUE;

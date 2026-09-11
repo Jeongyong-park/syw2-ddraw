@@ -13,6 +13,10 @@
 #define OK(x) CHECK((x)==DD_OK)
 int production_keys=0;
 LPARAM last_mouse=0;
+bool game_active=false;
+int accepted_clicks=0;
+IDirectDraw7* release_on_activation=nullptr;
+bool destroy_on_activation=false;
 void check_covered(HWND child) {
     // The full-client settings overlay must clip even direct GDI writes to EDITs.
     CHECK(IsWindowVisible(child));
@@ -24,6 +28,15 @@ void check_covered(HWND child) {
     CHECK(region==NULLREGION);
 }
 LRESULT CALLBACK game_proc(HWND h,UINT msg,WPARAM w,LPARAM l) {
+    if(msg==WM_ACTIVATEAPP && w && release_on_activation) {
+        auto released=release_on_activation; release_on_activation=nullptr;
+        if(destroy_on_activation) DestroyWindow(h);
+        CHECK(released->Release()>0); // Dispatch must retain a reference until it finishes.
+        return 73;
+    }
+    // ESL only advances output/input after WM_ACTIVATEAPP sees its own HWND in front.
+    if(msg==WM_ACTIVATEAPP) game_active=w && GetForegroundWindow()==h && !IsIconic(h);
+    if(msg==WM_LBUTTONDOWN) { if(game_active) ++accepted_clicks; return 0; }
     if(msg==WM_MOUSEMOVE) { last_mouse=l; return 0; }
     if(w==VK_F10 && (msg==WM_KEYDOWN || msg==WM_KEYUP || msg==WM_SYSKEYDOWN || msg==WM_SYSKEYUP)) { ++production_keys; return 0; }
     return DefWindowProcW(h,msg,w,l);
@@ -334,6 +347,14 @@ int wmain(int argc, wchar_t** argv) {
         CHECK(GetPrivateProfileIntW(L"Display",L"Fullscreen",-1,config.c_str())==0);
     }
     // Performance popup must not consume input or compete with the display dialog.
+    SendMessageW(settings,WM_COMMAND,IDC_TAB_SYW2X,0);
+    CHECK(IsWindowVisible(GetDlgItem(settings,IDC_SYW2X_FIRST)));
+    CHECK(!IsWindowVisible(GetDlgItem(settings,IDC_WINDOWED)));
+    CHECK(!IsWindowVisible(GetDlgItem(settings,IDC_SAVE)));
+    CHECK(GetDlgItem(settings,IDC_SYW2X_FIRST+11));
+    SendMessageW(settings,WM_COMMAND,IDC_TAB_DISPLAY,0);
+    CHECK(IsWindowVisible(GetDlgItem(settings,IDC_WINDOWED)));
+    CHECK(!IsWindowVisible(GetDlgItem(settings,IDC_SYW2X_FIRST)));
     SendMessageW(settings,WM_CLOSE,0,0);
     SetForegroundWindow(window);
     const auto osd_focus=GetFocus();
@@ -341,11 +362,35 @@ int wmain(int argc, wchar_t** argv) {
     const auto osd=FindWindowW(L"HQCDD.PerformanceOSD",L"HQCDD Performance");
     CHECK(osd && GetWindow(osd,GW_OWNER)==window);
     CHECK(GetFocus()==osd_focus);
+    CHECK(!IsWindowEnabled(osd));
     const auto osd_style=GetWindowLongPtrW(osd,GWL_EXSTYLE);
     CHECK((osd_style&(WS_EX_LAYERED|WS_EX_TRANSPARENT|WS_EX_NOACTIVATE|WS_EX_TOOLWINDOW))==
         (WS_EX_LAYERED|WS_EX_TRANSPARENT|WS_EX_NOACTIVATE|WS_EX_TOOLWINDOW));
     CHECK(SendMessageW(osd,WM_NCHITTEST,0,0)==HTTRANSPARENT);
     CHECK(SendMessageW(osd,WM_MOUSEACTIVATE,0,0)==MA_NOACTIVATE);
+    // Activation can arrive before the game becomes foreground. Returning from
+    // a same-thread popup need not produce another WM_ACTIVATEAPP notification.
+    auto popup=CreateWindowW(L"STATIC",L"activation probe",WS_OVERLAPPEDWINDOW|WS_VISIBLE,
+        0,0,120,100,nullptr,nullptr,wc.hInstance,nullptr);
+    CHECK(popup); SetForegroundWindow(popup); CHECK(GetForegroundWindow()==popup);
+    SendMessageW(window,WM_ACTIVATEAPP,TRUE,0); CHECK(!game_active);
+    SetForegroundWindow(window); CHECK(GetForegroundWindow()==window);
+    MSG activation_message{};
+    while(PeekMessageW(&activation_message,window,0,0,PM_REMOVE)) DispatchMessageW(&activation_message);
+    const int before_click=accepted_clicks;
+    SendMessageW(window,WM_LBUTTONDOWN,MK_LBUTTON,MAKELPARAM(1,1));
+    CHECK(game_active && accepted_clicks==before_click+1);
+    // A disabled owner/modal dialog must not be reactivated by a queued retry.
+    SetForegroundWindow(popup);
+    SendMessageW(window,WM_ACTIVATEAPP,TRUE,0); CHECK(!game_active);
+    EnableWindow(window,FALSE);
+    while(PeekMessageW(&activation_message,window,0,0,PM_REMOVE)) DispatchMessageW(&activation_message);
+    CHECK(!game_active && GetForegroundWindow()==popup);
+    EnableWindow(window,TRUE);
+    SetForegroundWindow(window);
+    while(PeekMessageW(&activation_message,window,0,0,PM_REMOVE)) DispatchMessageW(&activation_message);
+    CHECK(game_active);
+    DestroyWindow(popup);
     // Native modal dialogs disable their owner without deactivating the process.
     EnableWindow(window,FALSE);
     SendMessageW(osd,WM_TIMER,1,0);
@@ -361,6 +406,11 @@ int wmain(int argc, wchar_t** argv) {
     SendMessageW(window,WM_SYSCOMMAND,0x1e30,0);
     settings=FindWindowExW(window,nullptr,L"#32770",nullptr);
     CHECK(settings && !IsWindowVisible(osd));
+    // Keep a visible test-owned foreground window while each Draw restores its
+    // original (hidden) window style during teardown.
+    auto lifetime_anchor=CreateWindowW(L"STATIC",L"lifetime test anchor",WS_OVERLAPPEDWINDOW|WS_VISIBLE,
+        0,0,160,120,nullptr,nullptr,wc.hInstance,nullptr);
+    CHECK(lifetime_anchor); SetForegroundWindow(lifetime_anchor);
     // Leave both open to exercise owner/Draw teardown with live popups and hook.
     DestroyWindow(edit);
     clipper->Release();
@@ -369,6 +419,36 @@ int wmain(int argc, wchar_t** argv) {
     CHECK(!(GetWindowLongPtrW(hidden,GWL_STYLE)&WS_CLIPSIBLINGS));
     CHECK(GetWindowLongPtrW(clipped,GWL_STYLE)&WS_CLIPSIBLINGS);
     CHECK(!IsWindowVisible(hidden) && !IsWindowVisible(clipped));
+    SetForegroundWindow(lifetime_anchor);
+    // The game may release its last Draw reference (and destroy its window)
+    // inside either a normal or a deferred activation callback.
+    for(bool deferred : {false,true}) for(bool destroy : {false,true}) {
+        auto owner=CreateWindowW(wc.lpszClassName,L"activation lifetime",WS_OVERLAPPEDWINDOW,
+            0,0,240,180,lifetime_anchor,nullptr,wc.hInstance,nullptr);
+        CHECK(owner);
+        IDirectDraw7* transient=nullptr;
+        OK(create(nullptr,reinterpret_cast<void**>(&transient),IID_IDirectDraw7,nullptr));
+        OK(transient->SetCooperativeLevel(owner,DDSCL_NORMAL));
+        ShowWindow(owner,SW_SHOW); SetActiveWindow(owner); SetForegroundWindow(owner);
+        SendMessageW(owner,WM_SYSCOMMAND,0x1e40,0);
+        auto transient_osd=FindWindowW(L"HQCDD.PerformanceOSD",L"HQCDD Performance");
+        CHECK(transient_osd);
+        if(deferred) {
+            CHECK(GetForegroundWindow()==owner);
+            SendMessageW(owner,WM_ACTIVATEAPP,FALSE,0);
+            SendMessageW(owner,WM_ACTIVATE,WA_ACTIVE,0);
+        }
+        release_on_activation=transient; destroy_on_activation=destroy;
+        if(deferred) {
+            MSG message{};
+            while(PeekMessageW(&message,owner,0,0,PM_REMOVE)) DispatchMessageW(&message);
+        } else CHECK(SendMessageW(owner,WM_ACTIVATEAPP,TRUE,0)==73);
+        CHECK(!release_on_activation);
+        CHECK(!IsWindow(transient_osd));
+        if(destroy) CHECK(!IsWindow(owner));
+        else { CHECK(IsWindow(owner)); DestroyWindow(owner); }
+    }
+    DestroyWindow(lifetime_anchor);
     DestroyWindow(window); UnregisterClassW(wc.lpszClassName,wc.hInstance);
     FreeLibrary(dll);
     CHECK(!IsWindow(settings));
