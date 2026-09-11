@@ -12,10 +12,11 @@ def summarize_input(trace, injections, start_qpc, end_qpc):
     data=json.loads(Path(injections).read_text(encoding='utf-8'))
     if data['columns']!=['before_qpc','after_qpc','screen_x','screen_y','sequence']:
         raise ValueError('Tagged injection schema required')
-    sent={}
+    sent={}; seen=set()
     for before,after,x,y,sequence in data['events']:
-        if not 1<=sequence<=65535 or sequence in sent or after<before:
+        if not 1<=sequence<=65535 or sequence in seen or after<before:
             raise ValueError('Invalid or duplicate injection sequence')
+        seen.add(sequence)
         if start_qpc<=before<=after<=end_qpc: sent[sequence]=(before,after)
     received=defaultdict(list); frequency=None
     with Path(trace).open(encoding='utf-8',newline='') as f:

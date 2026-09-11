@@ -40,9 +40,25 @@ class CompareTests(unittest.TestCase):
                     vsync=0,fullscreen=0,cursor_sweep=True,input_delivery=delivery)))
             r=report.compare(root); row=r['conditions'][0]
             self.assertEqual(row['input_delivery_runs'],2)
+            self.assertEqual(row['input_delivery_missing_runs'],1)
             self.assertEqual(row['median_run_p95_delivery_lower_bound_ms'],5)
             self.assertEqual(row['median_run_p95_delivery_upper_bound_ms'],6)
             self.assertIn('Not photon latency',report.render(r))
+    def test_sweep_without_tags_remains_visible_as_unavailable(self):
+        with tempfile.TemporaryDirectory() as d:
+            root=Path(d); (root/'manifest.json').write_text('{"jobs":[{}]}')
+            run=root/'run-00'; run.mkdir()
+            (run/'result.json').write_text(json.dumps(dict(valid=True,renderer='auto',scaling='nearest',
+                vsync=0,fullscreen=1,cursor_sweep=True,input_delivery={'available':False,'injected':20,'matched':0})))
+            r=report.compare(root)
+            self.assertEqual(r['conditions'][0]['input_delivery_missing_runs'],1)
+            rendered=report.render(r)
+            self.assertIn('0/20',rendered); self.assertIn('N/A',rendered)
+            data=json.loads((run/'result.json').read_text()); data.pop('input_delivery')
+            data.update(trace_enabled=False,cursor_injections=30)
+            (run/'result.json').write_text(json.dumps(data))
+            rendered=report.render(report.compare(root))
+            self.assertIn('0/30',rendered); self.assertIn('trace off',rendered)
     def test_cursor_sweep_is_not_pooled_or_paired_with_unscripted_runs(self):
         with tempfile.TemporaryDirectory() as d:
             root=Path(d); (root/'manifest.json').write_text('{"jobs":[{},{},{}]}')

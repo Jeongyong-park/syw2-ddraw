@@ -40,3 +40,11 @@ class InputReportTests(unittest.TestCase):
                 self.capture(Path(d),[[100,110,0,0,1]],rows,False)
             with self.assertRaisesRegex(ValueError,'duplicate'):
                 self.capture(Path(d),[[100,110,0,0,1],[110,120,0,0,1]],rows)
+            with self.assertRaisesRegex(ValueError,'duplicate'):
+                self.capture(Path(d),[[-20,-10,0,0,1],[110,120,0,0,1]],rows)
+
+    def test_no_tags_is_unavailable_not_zero_latency(self):
+        with tempfile.TemporaryDirectory() as d:
+            r=self.capture(Path(d),[[100,110,0,0,1]],'gpu_present,120,125,1000,1,0,0\n')
+            self.assertFalse(r['available']); self.assertEqual(r['unobserved_sequences'],1)
+            self.assertIsNone(r['delivery_upper_bound_ms'])
