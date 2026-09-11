@@ -37,13 +37,13 @@ jobs:
         run: python -m unittest discover -s tests -p test_*.py -v
       # Native runtime tests require an interactive desktop and a hardware D3D11
       # device. Run build.ps1 locally; hosted CI only verifies their compilation.
-      - name: Build end-user archive
+      - name: Build compatibility DLL archive
         run: python package.py
       - name: Build developer archive
         run: python package.py --developer
-      - name: Build experimental ASI archive
+      - name: Build primary ASI release archive
         run: python package.py --asi
-      - name: Verify extracted distribution and adjacent DLL import
+      - name: Verify extracted ASI and compatibility DLL distributions
         run: ./tests/test_distribution.ps1
       - name: Validate release assets and tag (no publishing)
         shell: pwsh
@@ -80,7 +80,7 @@ jobs:
         with:
           name: syw2-ddraw-distributions
           path: output
-      - name: Publish verified user ZIP to GitHub Release
+      - name: Publish verified ASI ZIP to GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
           GITHUB_REPOSITORY: ${{ github.repository }}

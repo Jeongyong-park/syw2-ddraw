@@ -38,55 +38,53 @@ HQNET 로그인·채팅 입력칸이 사라지거나 깜빡이는 문제도 개�
 
 ## 준비할 것
 
-- 평소 정상 실행되는 조선의반격 게임 폴더와 실행 파일.
-- **최종사용자 배포 ZIP `syw2-ddraw-v<버전>.zip`**. GitHub의 **Source code (zip)**에는 빌드 DLL이 없습니다.
+- 정상 실행되는 ESL 게임 폴더와 기존 Ultimate ASI Loader (`ddraw.dll`).
+- **기본 배포 ZIP `syw2-ddraw-v<버전>-asi.zip`**. 로더와 SYW2X는 포함하지 않습니다.
 
-**Python·PowerShell 명령·Visual Studio·EXE 패치는 필요 없습니다.**
-[배포 페이지](https://github.com/Jeongyong-park/syw2-ddraw/releases)의 **Assets**에서 사용자 ZIP을 선택하세요.
-`0.x`는 **Pre-release(시험판)**로 표시됩니다. 아직 배포 항목이 없으면 제작자가 제공한 시험 ZIP을 사용하세요.
+다음 새 릴리즈부터 ASI판을 기본 게시합니다. 기존 v0.6.2 이하 릴리즈의 DLL ZIP은 변경하지 않습니다.
+[배포 페이지](https://github.com/Jeongyong-park/syw2-ddraw/releases)의 Assets를 확인하세요.
+GitHub의 Source code ZIP에는 실행 바이너리가 없습니다. `0.x`는 시험판입니다.
+Python·Visual Studio·EXE 패치는 필요 없습니다.
 
-충무공넷을 이용한다면 평소 사용하던 충무공넷 EXE를 그대로 사용합니다.
-이 도구는 서버 주소·계정·VPN·게임방 연결 방식을 변경하지 않습니다.
+## 설치: 기존 ESL 로더 유지하기
 
-## 설치: DLL 파일 교체하기
-
-1. **게임을 완전히 종료합니다.**
-2. 평소 실행하는 EXE가 있는 게임 폴더를 엽니다.
-3. 그 폴더에 기존 `ddraw.dll`이 있으면 `ddraw.dll.bak`으로 이름을 바꿔 보관합니다.
-   이미 같은 백업 이름이 있다면 `ddraw-original-2.dll.bak`처럼 다른 이름을 사용하세요.
-4. 배포 ZIP을 압축 해제하고, 그 안의 `ddraw.dll`을 게임 폴더로 복사합니다.
-5. 배포 ZIP의 `hqcdd.ini`도 같은 게임 폴더에 복사합니다.
-   이미 HQCDD 설정 파일이 있다면 기존 설정을 유지하세요.
-6. 기존 게임 EXE를 실행합니다. 예: `조선의반격 오리지날 실행 충무공넷.exe`.
-
-최종사용자 ZIP에는 `ddraw.dll`과 `hqcdd.ini`가 바로 들어 있습니다.
-간단한 설치 안내는 함께 제공되는 [INSTALL.txt](INSTALL.txt)를 참고하세요.
-이름에 `-developer`가 붙은 ZIP은 개발용 소스·도구 묶음입니다.
-
-설치 후 게임 폴더의 예시입니다.
+1. 게임을 종료하고 기존 DLL과 설정을 백업합니다.
+2. 게임 옆 `ddraw.dll`이 기존 ESL ASI 로더인지 확인합니다.
+   이전 HQCDD DLL판으로 덮어썼다면 **원래 ESL/SYW2X 배포본의 ASI 로더를 복원**합니다.
+   백업이 어떤 DLL인지 불확실하면 이름만 바꾸지 말고 원래 배포본을 사용하세요.
+3. `ddrawHooked.dll` 체인 파일이 있다면 별도 백업 폴더로 옮깁니다.
+4. ZIP의 `plugins/hqcdd.asi`를 게임의 `plugins` 폴더에 복사합니다.
+   기존 `ddraw.dll`과 `plugins/syw2x.asi`는 유지합니다.
+5. `hqcdd.ini`를 게임 EXE 옆에 둡니다. 기존 설정 파일이 있으면 덮어쓰지 않습니다.
+6. 평소 사용하던 원래 ESL EXE를 직접 실행합니다.
+   import가 변경된 `HQ그래픽.exe`나 `launch.ps1`, DxWnd 실행 구성은 사용하지 않습니다.
 
 ```text
-D:\syw2plus\
-  조선의반격 오리지날 실행 충무공넷.exe  ← 평소 실행하던 파일
-  ddraw.dll                              ← 배포 ZIP의 화면 개선 DLL
-  hqcdd.ini                              ← 화면 설정, 이 이름 그대로 유지
-  ddraw.dll.bak                          ← 기존 DLL 백업, 있었던 경우
-  ...기존 게임 데이터...
+게임 폴더/
+  [ESL]Syw2plus 2606.exe
+  ddraw.dll              기존 ASI 로더
+  hqcdd.ini              HQCDD 설정
+  syw2x.ini              SYW2X 설정
+  plugins/
+    hqcdd.asi            이번 배포 파일
+    syw2x.asi            기존 플러그인
 ```
 
-**Windows 시스템 폴더의 ddraw.dll은 수정하지 않습니다. EXE 옆의 파일만 교체하세요.**
-탐색기에서 **파일 확장명** 표시를 켜고 `ddraw.dll.dll`로 저장되지 않았는지 확인하세요.
+**DLL판과 ASI판은 동시에 설치하지 않습니다.** Windows 시스템 폴더와 원본 EXE는 변경하지 않습니다.
+게임 폴더 `hqcdd.log`의 `ASI active`로 연결을 확인하세요.
+간단한 절차는 ASI ZIP의 `INSTALL.txt`, 저장소에서는 [ASI-INSTALL.txt](ASI-INSTALL.txt)를 참고하세요.
 
-이미 `ddraw.dll`이라는 이름으로 제공된 HQCDD 배포 파일이라면 다시 이름을 바꿀 필요 없이 복사하면 됩니다.
-설정 파일 이름은 항상 `hqcdd.ini`이며, 로그는 `hqcdd.log`입니다.
+## DLL 호환판과 개발용 배포
+
+기존 `syw2-ddraw-v<버전>.zip` DLL판과 `-developer.zip`은 CI 산출물로 유지합니다.
+자동 GitHub 릴리즈에는 ASI ZIP과 체크섬만 게시합니다.
+ASI 로더가 없는 환경에서 DLL판을 별도로 사용하는 경우 해당 DLL ZIP의 `INSTALL.txt`를 따르세요.
+DLL판으로 기존 로더를 교체하면 SYW2X가 자동 로드되지 않을 수 있습니다.
 
 ## 다음부터 실행하기
 
-평소 사용하던 게임 EXE나 그 EXE를 가리키는 바로가기를 실행하면 됩니다.
-별도 런처나 설치 기록 파일은 필요하지 않습니다.
-
-기존에 만든 **`… HQ그래픽.exe`는 `hqcdd.dll`을 불러오는 시험용 복사본**입니다.
-DLL 교체 방식으로 전환할 때는 그 복사본이나 `launch.ps1` 대신 **기존 원본·충무공넷 EXE**를 실행하세요.
+원래 ESL 게임 EXE 또는 그 바로가기를 실행하세요. 설정과 로그는 게임 EXE 옆에 유지됩니다.
+서버 주소·계정·VPN·게임방 연결 방식은 변경하지 않습니다.
 
 ## 게임 안에서 화면 바꾸기
 
@@ -139,11 +137,11 @@ DLL 교체 방식으로 전환할 때는 그 복사본이나 `launch.ps1` 대신
 
 | 증상 | 확인할 내용 |
 | --- | --- |
-| Ctrl+Alt+D를 눌러도 설정이 열리지 않음 | 실행 중인 EXE와 같은 폴더에 우리 DLL이 `ddraw.dll`이라는 이름으로 있는지 확인하세요. |
-| `hqcdd.dll`이 없다고 나옴 | 이전 `HQ그래픽.exe`를 실행했을 수 있습니다. DLL 교체 방식에서는 기존 게임 EXE를 실행하세요. |
+| Ctrl+Alt+D를 눌러도 설정이 열리지 않음 | `plugins/hqcdd.asi`, 기존 ASI 로더와 `hqcdd.log`의 `ASI active`/`ASI disabled`를 확인하세요. |
+| `hqcdd.dll`이 없다고 나옴 | 이전 `HQ그래픽.exe`를 실행했을 수 있습니다. ASI판에서는 원래 ESL 게임 EXE를 실행하세요. |
 | `hqcdd-install.json`이나 해시 오류가 나옴 | 이전 시험용 런처를 사용한 상태입니다. 기존 게임 EXE를 직접 실행하세요. |
 | 파일을 교체할 수 없음 | 게임을 종료한 뒤 다시 복사하세요. |
-| DLL을 넣어도 기존 래퍼가 계속 실행됨 | 다른 게임 폴더의 EXE를 실행했거나 파일명이 `ddraw.dll.dll`인지 확인하세요. |
+| ASI가 활성화되지 않음 | 다른 게임 폴더 실행, 로더 덮어쓰기, `ddrawHooked.dll` 중복 설치 여부와 로그를 확인하세요. |
 | GPU를 적용했는데 GDI로 돌아옴 | GPU 출력이 실패한 상태입니다. GDI를 사용하고 로그와 PC 환경을 알려주세요. |
 | DLL 누락·잘못된 이미지 등의 오류 | 실행한 EXE 이름, 사용한 ZIP 버전과 오류 문구를 알려주세요. 우리 DLL은 x86 게임용입니다. |
 
@@ -168,26 +166,21 @@ Scaling=nearest
 
 ## 업데이트·원래 방식으로 복구하기
 
-**업데이트:** 게임을 종료하고 새 사용자 배포 ZIP의 `ddraw.dll`을 복사해
-게임 폴더의 **현재 HQCDD DLL만** 교체합니다. 기존 `hqcdd.ini`와 최초 백업은 유지하세요.
-DLL 교체 방식은 런처 해시 검사를 사용하지 않으므로 설치 기록을 다시 만들 필요가 없습니다.
+**업데이트:** 게임 종료 후 새 ASI ZIP의 `plugins/hqcdd.asi`만 교체합니다.
+기존 `hqcdd.ini`, ASI 로더, SYW2X와 최초 백업을 유지하세요.
+DLL판에서 넘어오는 경우 위의 로더 복원 절차를 먼저 수행합니다.
 
-**복구·제거:** 게임을 종료한 뒤 설치한 HQCDD `ddraw.dll`을 제거하거나 다른 이름으로 옮기고,
-보관한 원래 DLL을 `ddraw.dll`이라는 이름으로 되돌립니다.
-설치 전에 게임 폴더에 `ddraw.dll`이 없었다면 HQCDD DLL을 제거하면 됩니다.
-더 이상 사용하지 않는 `hqcdd.ini`·`hqcdd.log`는 선택적으로 삭제할 수 있습니다.
+**복구·제거:** 게임 종료 후 `plugins/hqcdd.asi`를 별도 폴더로 옮깁니다.
+기존 ASI 로더와 SYW2X는 그대로 둡니다. 실행 중 플러그인 해제는 지원하지 않습니다.
 원본 EXE와 게임 데이터는 삭제하지 마세요.
-
-HQCDD로 교체한 동안에는 기존 dxwrapper와 그 DLL이 불러오던 **syw2x 플러그인 기능이 자동 적용되지 않습니다.**
-기존 DLL이 필요한 다른 EXE도 같은 게임 폴더를 사용한다면 영향을 받을 수 있으므로 백업을 보관하세요.
-기존 환경과 나란히 비교할 필요가 있는 개발자는 [별도 시험본 방식](docs/development.md#별도-시험본-기존-환경과-비교할-때)을 사용할 수 있습니다.
 
 ## 지원 범위와 더 알아보기
 
 현재는 확인한 조선의반격 실행 파일을 대상으로 시험 중입니다.
-DLL 이름을 ddraw.dll로 바꾼 네이티브 통합 테스트는 통과했습니다.
-아래 예시 화면들은 같은 래퍼의 별도 시험본에서 캡처했으며, DLL 교체 방식의 실제 게임 검증은 추가 확인이 필요합니다.
-Windows 11의 동작은 사용자 확인이 있으나, 업데이트 시 INI 보존과 원래 DLL 복원은 미검증입니다.
+ESL 로더 9.7.0, SYW2X와 함께 37창병 전장, 선택·이동, OSD·설정창을 확인했습니다.
+`ViewPortPlusOn=1`에서 DxWnd 없이 831×624 확장을 확인했습니다.
+SYW2X 전체 옵션, 확장 전체화면과 실제 ASI 온라인 채팅은 미검증입니다.
+위 로그인·채팅 이미지는 이전 DLL판의 기록이며 ASI판의 실측 이미지가 아닙니다.
 Windows 10 장비가 없어 해당 OS는 미검증이며, 운영체제별 설치·업데이트·복구와 GPU·DPI·다중 모니터 수동 검증은 1.0 이후로 연기합니다.
 장시간 멀티플레이와 모든 한글 입력 조합의 검증도 아직 완료하지 않았습니다.
 원본 대비 전투 진행 속도도 추가 비교가 필요합니다.
@@ -201,8 +194,7 @@ Windows 10 장비가 없어 해당 OS는 미검증이며, 운영체제별 설치
 
 ## 실시간 성능 오버레이
 
-기존 ESL의 SYW2X 로더와 함께 사용하는 [ASI 실험판](docs/asi-integration.md)도 빌드할 수 있습니다.
-일반 DLL판과 설치 방식이 다르므로 `ASI-INSTALL.txt`를 먼저 확인하세요.
+ASI 구성과 검증 범위는 [ASI 통합 문서](docs/asi-integration.md)를 참고하세요.
 
 **Ctrl+Alt+F**로 FPS, 프레임 간격 그래프, 출력 처리 시간, CPU·RAM을 표시합니다. **Ctrl+Alt+B**로 전장 플레이 구간의 벤치마크를 시작·종료합니다. 기본은 꺼짐이며, [표시 지표와 사용법](docs/performance-osd.md)을 참고하세요.
 

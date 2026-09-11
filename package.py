@@ -11,7 +11,7 @@ ROOT_FILES = (
     '.gitignore', 'LICENSE', 'README.md', 'INSTALL.txt', 'ASI-INSTALL.txt', 'CMakeLists.txt', 'build.ps1',
     'VERSION', 'CHANGELOG.md', 'exports.def', 'exports-asi.def', 'hqcdd.ini', 'launch.ps1', 'prepare.py', 'package.py',
 )
-USER_FILES = ('LICENSE', 'README.md', 'INSTALL.txt', 'VERSION', 'CHANGELOG.md', 'hqcdd.ini')
+USER_FILES = ('LICENSE', 'README.md', 'INSTALL.txt', 'ASI-INSTALL.txt', 'VERSION', 'CHANGELOG.md', 'hqcdd.ini')
 SOURCE_DIRS = ('.github', 'src', 'tests', 'docs', 'tools')
 SOURCE_SUFFIXES = {'.cpp', '.h', '.rc', '.py', '.md', '.yml', '.yaml', '.in', '.ps1'}
 EXCLUDED_DIRS = {'.git', 'build', 'output', '__pycache__'}

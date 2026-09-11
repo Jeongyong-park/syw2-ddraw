@@ -1,4 +1,7 @@
-HQCDD 설치 안내
+HQCDD DLL 호환판 설치 안내
+
+기본 ESL 배포는 ASI판입니다. 저장소의 ASI-INSTALL.txt를 참고하세요.
+이 문서는 ddraw.dll이 포함된 기존 DLL ZIP 전용입니다. ASI판과 동시에 설치하지 마세요.
 
 1. 게임을 종료합니다.
 2. 게임 EXE 옆의 기존 ddraw.dll을 다른 이름으로 백업합니다.
@@ -16,7 +19,8 @@ HQCDD 설치 안내
 Windows 시스템 폴더와 원본 EXE·게임 데이터는 변경하지 마세요.
 
 Python, Visual Studio, EXE 패치, 별도 런처는 필요 없습니다.
-기존 dxwrapper/syw2x 기능은 이 DLL로 대체됩니다.
+기존 ASI 로더를 이 DLL로 교체하면 SYW2X가 자동 로드되지 않을 수 있습니다.
+SYW2X 기능을 유지하려면 ASI판을 사용하세요.
 Windows 11 동작은 사용자 확인이 있으며 Windows 10은 미검증입니다.
 운영체제별 설치·업데이트·복구 수동 검증은 1.0 이후에 진행합니다.
 

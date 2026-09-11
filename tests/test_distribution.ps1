@@ -28,6 +28,15 @@ try {
     & $loader
     if ($LASTEXITCODE -ne 0) { throw "DDRAW import smoke test failed: $LASTEXITCODE" }
     Write-Host 'PASS: extracted end-user ZIP loads without prepare.py or a game EXE patch'
+    $asiRoot = Join-Path $testRoot 'ASI distribution'
+    Expand-Archive -LiteralPath (Join-Path $repoRoot "output/syw2-ddraw-v$version-asi.zip") -DestinationPath $asiRoot
+    $asi = Join-Path $asiRoot 'plugins/hqcdd.asi'
+    if (Test-Path -LiteralPath (Join-Path $asiRoot 'ddraw.dll')) { throw 'ASI ZIP replaces the loader' }
+    & (Join-Path $PSScriptRoot 'test_version.ps1') -DllPath $asi
+    Copy-Item -LiteralPath (Join-Path $repoRoot 'build/Release/asi_import_test.exe') -Destination $asiRoot
+    & (Join-Path $asiRoot 'asi_import_test.exe') $asi
+    if ($LASTEXITCODE -ne 0) { throw "Extracted ASI import test failed: $LASTEXITCODE" }
+    Write-Host 'PASS: extracted ASI ZIP connects real DDRAW imports from a Unicode/space path'
 } finally {
     # Only delete the exact temporary directory created by this invocation.
     $resolvedTest = [IO.Path]::GetFullPath($testRoot)

@@ -53,8 +53,8 @@ rtk proxy python package.py --asi
 빌드 결과는 `build/Release/hqcdd.dll`과 `build/Release/hqcdd.asi`다.
 ASI ZIP은 `output/syw2-ddraw-v<버전>-asi.zip`이며 `ddraw.dll`을 포함하지 않는다.
 기존 `prepare.py`의 EXE import 변경 기능과 성능 실행기의 DLL 교체 방식은 ASI 설치에
-사용하지 않는다. 기존 자동 릴리즈 게시 스크립트는 일반 DLL ZIP만 게시하며,
-ASI ZIP은 별도 실험/CI 산출물이다.
+사용하지 않는다. 자동 릴리즈 게시 스크립트는 ASI ZIP과 체크섬만 게시한다.
+일반 DLL 및 개발용 ZIP은 CI 호환성 산출물로 유지한다. 다음 새 태그부터 적용하며 기존 릴리즈는 덮어쓰지 않는다.
 
 네이티브 테스트는 DLL 및 ASI 코어 각각의 팔레트, GPU/GDI, EDIT 위치·클리핑,
 설정창·포커스·종료 처리를 검사한다. 실제 DDRAW import를 가진 별도 테스트 EXE는
