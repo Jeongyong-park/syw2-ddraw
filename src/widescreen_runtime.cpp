@@ -41,7 +41,7 @@ bool matching_file() {
 }
 }
 
-WideRuntimeResult apply_widescreen_image(uint8_t* base,bool wanted) {
+WideRuntimeResult apply_widescreen_image(uint8_t* base,bool wanted,bool syw_viewport) {
     using namespace wide_recipe;
     const auto dos=reinterpret_cast<const IMAGE_DOS_HEADER*>(base);
     if(dos->e_magic!=IMAGE_DOS_SIGNATURE || dos->e_lfanew<0 || dos->e_lfanew>0x1000) return {};
@@ -57,6 +57,11 @@ WideRuntimeResult apply_widescreen_image(uint8_t* base,bool wanted) {
             return {false,false,"patch preimage conflict"};
     }
     if(!wanted) return {true,false,"original 4:3; no memory patches"};
+    // A supported unmodified image can still select 4:3 to clear a rejected
+    // saved request. Do not disable both buttons because another plugin owns
+    // viewport expansion; no HQCDD patches or allocations occur in this case.
+    if(syw_viewport)
+        return {true,false,"SYW2X viewport expansion blocks 16:9; 4:3 remains selectable"};
     // Let Windows choose a free address, then relocate the cache operands and
     // both directions of relative jumps between game code and ASI-owned thunks.
     auto memory=static_cast<uint8_t*>(VirtualAlloc(nullptr,
@@ -122,8 +127,7 @@ WideRuntimeResult initialize_widescreen(const wchar_t* ini) {
     std::wstring syw_path=ini;
     const auto slash=syw_path.find_last_of(L"\\/");
     syw_path=(slash==std::wstring::npos?L"":syw_path.substr(0,slash+1))+L"syw2x.ini";
-    if(wanted && GetPrivateProfileIntW(L"ViewPortControl",L"ViewPortPlusOn",0,syw_path.c_str())!=0)
-        return {false,false,"SYW2X viewport expansion must be off for experimental 16:9"};
-    return apply_widescreen_image(base,wanted);
+    const bool syw_viewport=GetPrivateProfileIntW(L"ViewPortControl",L"ViewPortPlusOn",0,syw_path.c_str())!=0;
+    return apply_widescreen_image(base,wanted,syw_viewport);
 }
 }

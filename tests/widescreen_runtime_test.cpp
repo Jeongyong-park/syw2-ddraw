@@ -21,10 +21,15 @@ int main() {
         auto unchanged=[&] { for(const auto& p:patches) CHECK(!std::memcmp(image+p.address-0x400000,p.before,p.size)); };
         auto state=hq::apply_widescreen_image(image,false);
         CHECK(state.available && !state.wide); unchanged();
+        state=hq::apply_widescreen_image(image,true,true);
+        CHECK(state.available && !state.wide && !state.allocation); unchanged();
+        state=hq::apply_widescreen_image(image,false,true);
+        CHECK(state.available && !state.wide && !state.allocation); unchanged();
         constexpr size_t count=sizeof(patches)/sizeof(patches[0]);
         const auto& last=patches[count-1];
         image[last.address-0x400000]^=1;
         CHECK(!hq::apply_widescreen_image(image,true).available);
+        CHECK(!hq::apply_widescreen_image(image,true,true).available);
         image[last.address-0x400000]^=1; unchanged();
         occupied=VirtualAlloc(reinterpret_cast<void*>(allocation_base),allocation_size,MEM_RESERVE,PAGE_NOACCESS);
         CHECK(occupied || GetLastError()==ERROR_INVALID_ADDRESS);
