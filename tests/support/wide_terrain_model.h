@@ -6,7 +6,8 @@
 #include <vector>
 
 namespace hq {
-// Experimental terrain-cache component. Not yet attached to the ESL renderer.
+// Historical 512-row CPU cache model used only by widescreen_test.
+// Production uses widescreen_runtime.cpp and a 608-row cache recipe.
 // Keep visible width separate from the 64x32 dirty-block grid and source pitch.
 struct WideTerrain {
     static constexpr int width=1068, height=600, hud_width=800;

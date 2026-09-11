@@ -1,4 +1,4 @@
-#include "../src/widescreen.h"
+#include "support/wide_terrain_model.h"
 #include <cstdio>
 #define CHECK(x) do { if(!(x)) { std::fprintf(stderr,"FAIL line %d: %s\n",__LINE__,#x); return 1; } } while(0)
 int main() {
