@@ -13,6 +13,15 @@ INT_PTR CALLBACK palette_dialog(HWND h,UINT msg,WPARAM w,LPARAM l) {
 }
 void check_palette_ui() {
     hq::Overlay overlay; overlay.syw2x_available=true;
+    overlay.aspect_available=true;
+    overlay.aspect_wide=overlay.aspect_saved_wide=true; // Saved 16:9 can be pending/rejected.
+    CHECK(!overlay.aspect_selection_changed()); // Unrelated temporary setting is allowed.
+    overlay.aspect_wide=false;
+    CHECK(overlay.aspect_selection_changed()); // Clearing the saved request needs persistence.
+    overlay.aspect_saved_wide=false;
+    CHECK(!overlay.aspect_selection_changed()); // Successful save resets the baseline.
+    overlay.aspect_wide=true;
+    CHECK(overlay.aspect_selection_changed());
     CHECK(overlay.palette[0x44]==0x04C804 && overlay.palette[0xFB]==0xBCBCC0);
     CHECK(overlay.palette[0x3D]==0x3C4474 && overlay.palette[0x21]==0xD08820);
     CHECK(overlay.palette[0xDB]==0x880C8C);

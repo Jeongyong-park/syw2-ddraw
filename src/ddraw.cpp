@@ -716,7 +716,7 @@ void Draw::apply_settings() {
     }
     const bool use_gpu=SendDlgItemMessageW(settings,IDC_RENDERER,CB_GETCURSEL,0,0)==0;
     const bool use_window=SendDlgItemMessageW(settings,IDC_MODE,CB_GETCURSEL,0,0)==0;
-    const bool aspect_changed=overlay.aspect_available && overlay.aspect_wide!=battle_aspect.wide;
+    const bool aspect_changed=overlay.aspect_selection_changed();
     if(aspect_changed && IsDlgButtonChecked(settings,IDC_SAVE)!=BST_CHECKED) {
         SetDlgItemTextW(settings,IDC_STATUS,L"전장 비율은 ‘다음 실행에도 저장’을 켜고 적용한 뒤 게임을 재실행해 주세요.");
         InvalidateRect(settings,nullptr,FALSE); return;
@@ -733,8 +733,11 @@ void Draw::apply_settings() {
     if (save) {
         const auto path=local_path(L"hqcdd.ini");
         saved=WritePrivateProfileStringW(L"Display",L"Fullscreen",windowed?L"0":L"1",path.c_str())!=FALSE;
-        if(overlay.aspect_available)
-            saved=(WritePrivateProfileStringW(L"Display",L"BattleAspect",overlay.aspect_wide?L"16:9":L"4:3",path.c_str())!=FALSE)&&saved;
+        if(overlay.aspect_available) {
+            const bool aspect_saved=WritePrivateProfileStringW(L"Display",L"BattleAspect",overlay.aspect_wide?L"16:9":L"4:3",path.c_str())!=FALSE;
+            if(aspect_saved) overlay.aspect_saved_wide=overlay.aspect_wide;
+            saved=aspect_saved && saved;
+        }
         saved=(WritePrivateProfileStringW(L"Display",L"Renderer",use_gpu?L"auto":L"gdi",path.c_str())!=FALSE)&&saved;
         saved=(WritePrivateProfileStringW(L"Display",L"VSync",vsync?L"1":L"0",path.c_str())!=FALSE)&&saved;
         saved=(WritePrivateProfileStringW(L"Display",L"LinearFilter",scaling==hq::Bilinear?L"1":L"0",path.c_str())!=FALSE)&&saved;
@@ -743,7 +746,7 @@ void Draw::apply_settings() {
         saved=(WritePrivateProfileStringW(L"Display",L"Scaling",hq::scaling_name(scaling),local_path(L"hqcdd.ini").c_str())!=FALSE)&&saved;
     }
     if (!saved) SetDlgItemTextW(settings,IDC_STATUS,L"현재 화면에 적용했습니다. 설정 파일 저장은 실패했습니다.");
-    else if(aspect_changed) SetDlgItemTextW(settings,IDC_STATUS,L"전장 비율을 저장했습니다. 게임 재실행 후 적용됩니다.");
+    else if(save && overlay.aspect_available && overlay.aspect_wide!=battle_aspect.wide) SetDlgItemTextW(settings,IDC_STATUS,L"전장 비율을 저장했습니다. 게임 재실행 후 적용됩니다.");
     else if (use_gpu && !gpu_enabled) SetDlgItemTextW(settings,IDC_STATUS,L"GPU 출력을 사용할 수 없어 GDI로 적용했습니다.");
     else if(!use_gpu && (scaling==hq::Bilinear || scaling==hq::SharpBilinear)) SetDlgItemTextW(settings,IDC_STATUS,L"GDI에서는 Nearest로 출력합니다. 보간 필터는 GPU에서 적용됩니다.");
     else SetDlgItemTextW(settings,IDC_STATUS,save?L"적용하고 저장했습니다.":L"현재 실행에 적용했습니다. 파일에는 저장하지 않았습니다.");
@@ -786,6 +789,7 @@ INT_PTR CALLBACK settings_proc(HWND h, UINT msg, WPARAM w, LPARAM l) {
             GetPrivateProfileStringW(L"Display",L"BattleAspect",d->battle_aspect.wide?L"16:9":L"4:3",aspect,32,local_path(L"hqcdd.ini").c_str());
             d->overlay.aspect_wide=hq::BattleAspect::requested(aspect);
         }
+        d->overlay.aspect_saved_wide=d->overlay.aspect_wide;
         d->overlay.init(h);
         for(int i=0;i<12;++i) {
             if(i<4) CheckDlgButton(h,IDC_SYW2X_FIRST+i,
