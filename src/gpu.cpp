@@ -1,4 +1,5 @@
 #include "gpu.h"
+#include "perf.h"
 #include <d3d11.h>
 #include <d3dcompiler.h>
 #include <wrl/client.h>
@@ -66,8 +67,9 @@ struct Gpu::Impl {
         return device->CreateBuffer(&b,nullptr,&constants);
     }
     HRESULT draw(HWND window,const Image& image,const Palette& pal,Viewport v,bool vsync,int scaling,std::vector<uint32_t>* capture) {
+        perf::Scope total("gpu_output",vsync,scaling);
         HRESULT hr;
-        if(!device) { hr=init(window); if(FAILED(hr)) return hr; }
+        if(!device) { perf::Scope stage("gpu_init"); hr=init(window); if(FAILED(hr)) return hr; }
         RECT r{}; GetClientRect(window,&r); if(r.right<=0 || r.bottom<=0) return S_OK;
         if(!target || cw!=r.right || ch!=r.bottom) {
             context->OMSetRenderTargets(0,nullptr,nullptr); target.Reset();
@@ -87,10 +89,12 @@ struct Gpu::Impl {
             pitch=image.pitch; th=image.height;
         }
         D3D11_MAPPED_SUBRESOURCE mapped{};
+        { perf::Scope stage("gpu_upload");
         hr=context->Map(texture.Get(),0,D3D11_MAP_WRITE_DISCARD,0,&mapped); if(FAILED(hr)) return hr;
         for(int y=0;y<image.height;++y)
             std::memcpy(static_cast<unsigned char*>(mapped.pData)+y*mapped.RowPitch,image.bytes.data()+y*image.pitch,image.pitch);
         context->Unmap(texture.Get(),0);
+        }
         struct Constants { unsigned w,h,bits,smooth; float palette[256][4]; float scale[4]; } c{};
         c.w=image.width; c.h=image.height; c.bits=image.bpp; c.smooth=scaling;
         c.scale[0]=float(std::max(1,v.width/image.width));
@@ -121,7 +125,10 @@ struct Gpu::Impl {
             }
             context->Unmap(staging.Get(),0);
         }
-        return swap->Present(vsync?1:0,0);
+        perf::Scope stage("gpu_present",vsync,scaling);
+        hr=swap->Present(vsync?1:0,0);
+        perf::mark("gpu_present_result",static_cast<long>(hr));
+        return hr;
     }
 };
 Gpu::Gpu():impl(std::make_unique<Impl>()) {}

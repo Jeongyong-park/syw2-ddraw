@@ -59,7 +59,8 @@ CI는 Windows x86 컴파일, DLL 메타데이터, Python 설치·패키징 테�
 
 `python -m pip install unicorn==2.1.4` 후 `python tests/unicorn_viewport.py`를 실행합니다.
 Release 빌드의 테스트 전용 unicorn_probe.dll에서 실제 src/viewport.h 코드를 x86으로 실행합니다.
-화면 비율·정수 배율·축소·0 크기·좌표 경계와 고정 시드 무작위 입력을 포함한 1,008개 사례를 유리수 기준값과 비교합니다.
+화면 비율·정수 배율·축소·0 크기·고정 시드 무작위 입력에 이동·정지·반전과 경계 좌표를 더한
+3,852개 사례를 유리수 기준값과 비교합니다. 물리 크기를 바꾸는 계산 검증이며 Windows DPI API 검증은 아닙니다.
 Windows API나 DllMain을 실행하지 않으며 GDI·IME·GPU·게임 진행 속도·Windows 10/11 호환성 검증은 아닙니다.
 테스트 DLL은 배포 ZIP에 포함하지 않습니다. CI에서도 같은 검사를 수행합니다.
 참고: [Unicorn 문서](https://www.unicorn-engine.org/docs/).
@@ -139,6 +140,8 @@ GDI 입력창과의 호환성을 위해 windowed blt-model swap chain을 사용�
 현재 구현은 범용 DirectDraw 대체물이 아니며 지원하지 않는 API는 오류로 처리합니다.
 
 ## INI 호환성
+
+성능 지표와 자동 진단 도구는 [성능 검사](performance-testing.md)를 참고하세요.
 
 설정 파일은 로드된 DLL 옆 `hqcdd.ini`의 `[Display]` 섹션입니다. DLL을 ddraw.dll로 바꿔도 설정·로그 파일명은 바뀌지 않습니다.
 

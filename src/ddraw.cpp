@@ -20,6 +20,7 @@
 #include "gpu.h"
 #include "settings_ids.h"
 #include "overlay.h"
+#include "perf.h"
 
 namespace {
 std::recursive_mutex mutex;
@@ -151,7 +152,7 @@ public:
         *out = this; AddRef(); return DD_OK;
     }
     void resize();
-    void present();
+    void present(const char* reason="request_repaint", const hq::Rect* dirty=nullptr);
     hq::Viewport viewport() const;
     void set_windowed(bool value);
     void sync_children();
@@ -186,6 +187,7 @@ public:
     HRESULT STDMETHODCALLTYPE SetCooperativeLevel(HWND h, DWORD flags) override;
     HRESULT STDMETHODCALLTYPE SetDisplayMode(DWORD w, DWORD h, DWORD bits, DWORD, DWORD flags) override;
     HRESULT STDMETHODCALLTYPE WaitForVerticalBlank(DWORD flags, HANDLE event) override {
+        hq::perf::Scope timing("vertical_blank_wait");
         if (event || flags == DDWAITVB_BLOCKBEGINEVENT) return DDERR_UNSUPPORTED;
         if (flags != DDWAITVB_BLOCKBEGIN && flags != DDWAITVB_BLOCKEND) return DDERR_INVALIDPARAMS;
         Sleep(1); return DD_OK;
@@ -246,6 +248,7 @@ public:
     IDirectDrawClipper* clipper = nullptr;
     bool locked = false;
     DWORD lock_flags = 0;
+    hq::Rect lock_area{};
     bool has_src_key=false, has_dst_key=false;
     DDCOLORKEY src_key{},dst_key{};
     HDC dc=nullptr;
@@ -279,6 +282,7 @@ public:
     UNSUP(AddAttachedSurface, (IDirectDrawSurface7*))
     UNSUP(AddOverlayDirtyRect, (RECT*))
     HRESULT STDMETHODCALLTYPE Blt(RECT* dest, IDirectDrawSurface7* source, RECT* src, DWORD flags, DDBLTFX* fx) override;
+    HRESULT blt(RECT* dest, IDirectDrawSurface7* source, RECT* src, DWORD flags, DDBLTFX* fx, const char* reason);
     UNSUP(BltBatch, (DDBLTBATCH*, DWORD, DWORD))
     HRESULT STDMETHODCALLTYPE BltFast(DWORD x, DWORD y, IDirectDrawSurface7* source, RECT* src, DWORD flags) override;
     UNSUP(DeleteAttachedSurface, (DWORD, IDirectDrawSurface7*))
@@ -293,7 +297,7 @@ public:
         if (flags & ~(DDFLIP_WAIT|DDFLIP_DONOTWAIT|DDFLIP_NOVSYNC)) return DDERR_UNSUPPORTED;
         if (!back || (target && target!=back)) return DDERR_NOTFLIPPABLE;
         if (busy() || back->busy()) return DDERR_SURFACEBUSY;
-        image.swap(back->image); draw->present(); return DD_OK;
+        image.swap(back->image); draw->present("request_flip"); return DD_OK;
     }
     HRESULT STDMETHODCALLTYPE GetAttachedSurface(DDSCAPS2* c, IDirectDrawSurface7** out) override {
         Guard lock(mutex); if (!out) return E_POINTER; *out=nullptr;
@@ -338,14 +342,14 @@ public:
         describe(out); out->dwFlags|=DDSD_LPSURFACE;
         out->dwWidth=r.right-r.left; out->dwHeight=r.bottom-r.top;
         out->lpSurface=image->bytes.data()+size_t(r.top)*image->pitch+r.left*(image->bpp/8);
-        locked=true; lock_flags=flags; return DD_OK;
+        locked=true; lock_flags=flags; lock_area=r; return DD_OK;
     }
     HRESULT STDMETHODCALLTYPE ReleaseDC(HDC h) override {
         Guard lock(mutex); if (!dc || h!=dc) return DDERR_INVALIDPARAMS;
         GdiFlush(); std::memcpy(image->bytes.data(),dib_bits,image->bytes.size());
         SelectObject(dc,old_bitmap); DeleteDC(dc); DeleteObject(bitmap);
         dc=nullptr; bitmap=nullptr; dib_bits=nullptr; old_bitmap=nullptr;
-        if (primary()) draw->present(); return DD_OK;
+        if (primary()) draw->present("request_release_dc"); return DD_OK;
     }
     HRESULT STDMETHODCALLTYPE Restore() override { return DD_OK; }
     HRESULT STDMETHODCALLTYPE SetClipper(IDirectDrawClipper* c) override {
@@ -362,11 +366,11 @@ public:
         Guard lock(mutex); auto v=static_cast<Palette*>(p);
         if (p && (!palettes.count(v) || v->draw!=draw || image->bpp!=8)) return DDERR_INVALIDPARAMS;
         if (v) v->AddRef(); if (palette) palette->Release(); palette=v;
-        if (primary()) draw->present(); return DD_OK;
+        if (primary()) draw->present("request_set_palette"); return DD_OK;
     }
     HRESULT STDMETHODCALLTYPE Unlock(RECT*) override {
         Guard lock(mutex); if (!locked) return DDERR_NOTLOCKED;
-        locked=false; if (primary() && !(lock_flags & DDLOCK_READONLY)) draw->present(); return DD_OK;
+        locked=false; if (primary() && !(lock_flags & DDLOCK_READONLY)) draw->present("request_unlock",&lock_area); return DD_OK;
     }
     UNSUP(UpdateOverlay, (RECT*, IDirectDrawSurface7*, RECT*, DWORD, DDOVERLAYFX*))
     UNSUP(UpdateOverlayDisplay, (DWORD))
@@ -387,8 +391,14 @@ public:
 };
 
 LRESULT CALLBACK window_proc(HWND h, UINT msg, WPARAM w, LPARAM l, UINT_PTR, DWORD_PTR data) {
+    if (msg==WM_MOUSEMOVE && hq::perf::recorder().enabled && !InSendMessage()) {
+        const auto tag=static_cast<DWORD>(GetMessageExtraInfo());
+        if ((tag & 0xffff0000u)==0x48510000u && (tag & 0xffffu))
+            hq::perf::mark("mouse_injected_entry",static_cast<long>(tag & 0xffffu));
+    }
     auto d=reinterpret_cast<Draw*>(data);
-    Guard lock(mutex);
+    std::unique_lock<std::recursive_mutex> lock(mutex,std::defer_lock);
+    { hq::perf::Scope wait(msg>=WM_MOUSEMOVE && msg<=WM_MBUTTONDBLCLK?"mouse_lock_wait":nullptr); lock.lock(); }
     if (d->hotkey(msg,w,l)) return 0;
     if (msg==WM_INITMENU) {
         auto result=DefSubclassProc(h,msg,w,l);
@@ -447,12 +457,16 @@ LRESULT CALLBACK window_proc(HWND h, UINT msg, WPARAM w, LPARAM l, UINT_PTR, DWO
         if (shortcut_draw==d) shortcut_draw=nullptr;
         if (d->clip_owned) { ClipCursor(nullptr); d->clip_owned=false; }
         RemoveWindowSubclass(h,window_proc,1); d->window=nullptr; d->styled=false;
+        hq::perf::recorder().finish();
     }
     if (msg>=WM_MOUSEMOVE && msg<=WM_MBUTTONDBLCLK) {
+        hq::perf::Scope timing("mouse_dispatch",GET_X_LPARAM(l),GET_Y_LPARAM(l));
         auto v=d->viewport();
-        int x=std::clamp(v.unmap_x(GET_X_LPARAM(l)),0,d->width-1);
-        int y=std::clamp(v.unmap_y(GET_Y_LPARAM(l)),0,d->height-1);
+        int x=v.game_x(GET_X_LPARAM(l));
+        int y=v.game_y(GET_Y_LPARAM(l));
         l=MAKELPARAM(x,y);
+        hq::perf::mark("mouse_mapped",x,y);
+        return DefSubclassProc(h,msg,w,l);
     }
     return DefSubclassProc(h,msg,w,l);
 }
@@ -531,6 +545,7 @@ Draw::~Draw() {
         }
     }
     log("DirectDraw7 released");
+    hq::perf::recorder().finish();
 }
 bool Draw::hotkey(UINT msg, WPARAM w, LPARAM l) {
     if (w!=VK_RETURN) return false;
@@ -841,12 +856,25 @@ void Draw::sync_children() {
         else remove_child(h,false);
     }
 }
-void Draw::present() {
-    if (presenting || layout_busy || !primary || primary->busy() || !IsWindow(window) || IsIconic(window)) return;
+void Draw::present(const char* reason, const hq::Rect* dirty) {
+    long area=0,total=0;
+    if (hq::perf::recorder().enabled && primary) {
+        const int w=primary->image->width,h=primary->image->height;
+        total=w*h;
+        // Requested destination footprint, not a count of pixels changed or uploaded.
+        area=dirty ? std::max(0,std::clamp(dirty->right,0,w)-std::clamp(dirty->left,0,w)) *
+                     std::max(0,std::clamp(dirty->bottom,0,h)-std::clamp(dirty->top,0,h)) : total;
+    }
+    hq::perf::Scope request(reason,area,total);
+    hq::perf::Scope timing("output_attempt",gpu_enabled,scaling);
+    if (presenting || layout_busy || !primary || primary->busy() || !IsWindow(window) || IsIconic(window)) {
+        hq::perf::mark("output_skipped",presenting?1:layout_busy?2:!primary?3:primary->busy()?4:!IsWindow(window)?5:6);
+        return;
+    }
     presenting=true;
     struct Reset { bool& b; ~Reset(){b=false;} } reset{presenting};
     try {
-        sync_children();
+        { hq::perf::Scope stage("child_layout"); sync_children(); }
         hq::Palette pal{};
         if (primary->palette) pal=primary->palette->colors();
         if (gpu_enabled) {
@@ -860,7 +888,9 @@ void Draw::present() {
             gpu.reset(); gpu_enabled=false;
             RedrawWindow(window,nullptr,nullptr,RDW_INVALIDATE|RDW_ALLCHILDREN);
         }
-        auto pixels=hq::rgb(*primary->image,pal);
+        hq::perf::mark("gdi_output_begin");
+        std::vector<uint32_t> pixels;
+        { hq::perf::Scope stage("gdi_rgb"); pixels=hq::rgb(*primary->image,pal); }
         BITMAPINFO info{}; info.bmiHeader.biSize=sizeof(BITMAPINFOHEADER);
         info.bmiHeader.biWidth=primary->image->width; info.bmiHeader.biHeight=-primary->image->height;
         info.bmiHeader.biPlanes=1; info.bmiHeader.biBitCount=32; info.bmiHeader.biCompression=BI_RGB;
@@ -880,8 +910,9 @@ void Draw::present() {
                            {0,v.y,v.x,v.y+v.height},{v.x+v.width,v.y,client.right,v.y+v.height}};
         for (auto& bar:bars) FillRect(dc,&bar,static_cast<HBRUSH>(GetStockObject(BLACK_BRUSH)));
         SetStretchBltMode(dc,COLORONCOLOR);
-        StretchDIBits(dc,v.x,v.y,v.width,v.height,0,0,primary->image->width,
-                      primary->image->height,pixels.data(),&info,DIB_RGB_COLORS,SRCCOPY);
+        { hq::perf::Scope stage("gdi_blit");
+          StretchDIBits(dc,v.x,v.y,v.width,v.height,0,0,primary->image->width,
+                      primary->image->height,pixels.data(),&info,DIB_RGB_COLORS,SRCCOPY); }
         ::ReleaseDC(window,dc);
     } catch (const std::bad_alloc&) { log("presentation allocation failed"); }
 }
@@ -911,13 +942,16 @@ HRESULT Draw::SetCooperativeLevel(HWND h, DWORD flags) {
 }
 
 BOOL WINAPI game_cursor(LPPOINT point) {
+    hq::perf::Scope timing("cursor_query");
     const BOOL ok=original_cursor(point);
-    Guard lock(mutex);
+    std::unique_lock<std::recursive_mutex> lock(mutex,std::defer_lock);
+    { hq::perf::Scope wait("cursor_lock_wait"); lock.lock(); }
     if (ok && point && mouse_draw && IsWindow(mouse_draw->window)) {
         ScreenToClient(mouse_draw->window,point);
         auto v=mouse_draw->viewport();
-        point->x=std::clamp(v.unmap_x(point->x),0,mouse_draw->width-1);
-        point->y=std::clamp(v.unmap_y(point->y),0,mouse_draw->height-1);
+        point->x=v.game_x(point->x);
+        point->y=v.game_y(point->y);
+        hq::perf::mark("cursor_query_mapped",point->x,point->y);
     }
     return ok;
 }
@@ -1143,10 +1177,13 @@ HRESULT Palette::SetEntries(DWORD flags, DWORD base, DWORD count, PALETTEENTRY* 
         SetDIBColorTable(s->dc,base,count,table);
     }
     // Repaint even when no pixels changed: fades/cycling update only palette entries.
-    if (draw->primary && draw->primary->palette==this) draw->present();
+    if (draw->primary && draw->primary->palette==this) draw->present("request_palette_entries");
     return DD_OK;
 }
 HRESULT Surface::Blt(RECT* dest, IDirectDrawSurface7* source, RECT* src, DWORD flags, DDBLTFX* fx) {
+    return blt(dest,source,src,flags,fx,"request_blt");
+}
+HRESULT Surface::blt(RECT* dest, IDirectDrawSurface7* source, RECT* src, DWORD flags, DDBLTFX* fx, const char* reason) {
     Guard lock(mutex);
     constexpr DWORD allowed=DDBLT_WAIT|DDBLT_DONOTWAIT|DDBLT_ASYNC|DDBLT_COLORFILL|DDBLT_KEYSRC|DDBLT_KEYDEST|DDBLT_KEYSRCOVERRIDE|DDBLT_KEYDESTOVERRIDE|DDBLT_DDFX|DDBLT_ROP;
     if (flags&~allowed) return unsupported("Blt flags");
@@ -1185,7 +1222,7 @@ HRESULT Surface::Blt(RECT* dest, IDirectDrawSurface7* source, RECT* src, DWORD f
         }
     } catch (const std::bad_alloc&) { return E_OUTOFMEMORY; }
       catch (const std::invalid_argument&) { return DDERR_INVALIDRECT; }
-    if (primary()) draw->present(); return DD_OK;
+    if (primary()) draw->present(reason,&dr); return DD_OK;
 }
 HRESULT Surface::BltFast(DWORD x, DWORD y, IDirectDrawSurface7* source, RECT* src, DWORD flags) {
     Guard lock(mutex); auto s=static_cast<Surface*>(source);
@@ -1199,7 +1236,7 @@ HRESULT Surface::BltFast(DWORD x, DWORD y, IDirectDrawSurface7* source, RECT* sr
     DWORD f=DDBLT_WAIT;
     if (flags&DDBLTFAST_SRCCOLORKEY) f|=DDBLT_KEYSRC;
     if (flags&DDBLTFAST_DESTCOLORKEY) f|=DDBLT_KEYDEST;
-    return Blt(&dest,source,src,f,nullptr);
+    return blt(&dest,source,src,f,nullptr,"request_blt_fast");
 }
 HRESULT Surface::GetDC(HDC* out) {
     Guard lock(mutex); if (!out) return E_POINTER; *out=nullptr;

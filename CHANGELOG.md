@@ -6,6 +6,8 @@
 
 ## [Unreleased]
 
+- 진단용 QPC 이벤트 CSV, CPU 처리 시간 분석기와 별도 복사본의 Windows 비교 실행기 추가. Unicorn 좌표·경계·연속 이동 검사를 확장. 실제 표시 FPS 및 커서 종단 지연은 아직 측정하지 않음.
+
 - 새 설치와 설정 파일이 없는 실행의 기본값을 GPU + Sharp Bilinear + 수직동기화 끄기로 변경. 기존 Scaling 및 LinearFilter 설정은 유지.
 
 ## [0.6.2] — 2026-09-10

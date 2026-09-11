@@ -28,7 +28,7 @@ jobs:
       - name: Build wrapper and native tests
         run: cmake --build build --config Release
       - name: Test production coordinate transform in Unicorn
-        run: python tests/unicorn_viewport.py
+        run: python tests/unicorn_viewport.py --report output/unicorn-viewport.json
       - name: Verify DLL version and author
         run: ./tests/test_version.ps1
       - name: Verify preparation and packaging
@@ -53,6 +53,12 @@ jobs:
           path: |
             output/*.zip
             output/*.zip.sha256
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v4
+        if: always() && hashFiles('output/unicorn-viewport.json') != ''
+        with:
+          name: unicorn-viewport-report
+          path: output/unicorn-viewport.json
           if-no-files-found: error
 
   release:
