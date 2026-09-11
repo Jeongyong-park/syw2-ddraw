@@ -13,6 +13,8 @@
 #define OK(x) CHECK((x)==DD_OK)
 int production_keys=0;
 LPARAM last_mouse=0;
+bool game_active=false;
+int accepted_clicks=0;
 void check_covered(HWND child) {
     // The full-client settings overlay must clip even direct GDI writes to EDITs.
     CHECK(IsWindowVisible(child));
@@ -24,6 +26,9 @@ void check_covered(HWND child) {
     CHECK(region==NULLREGION);
 }
 LRESULT CALLBACK game_proc(HWND h,UINT msg,WPARAM w,LPARAM l) {
+    // ESL only advances output/input after WM_ACTIVATEAPP sees its own HWND in front.
+    if(msg==WM_ACTIVATEAPP) game_active=w && GetForegroundWindow()==h && !IsIconic(h);
+    if(msg==WM_LBUTTONDOWN) { if(game_active) ++accepted_clicks; return 0; }
     if(msg==WM_MOUSEMOVE) { last_mouse=l; return 0; }
     if(w==VK_F10 && (msg==WM_KEYDOWN || msg==WM_KEYUP || msg==WM_SYSKEYDOWN || msg==WM_SYSKEYUP)) { ++production_keys; return 0; }
     return DefWindowProcW(h,msg,w,l);
@@ -341,11 +346,35 @@ int wmain(int argc, wchar_t** argv) {
     const auto osd=FindWindowW(L"HQCDD.PerformanceOSD",L"HQCDD Performance");
     CHECK(osd && GetWindow(osd,GW_OWNER)==window);
     CHECK(GetFocus()==osd_focus);
+    CHECK(!IsWindowEnabled(osd));
     const auto osd_style=GetWindowLongPtrW(osd,GWL_EXSTYLE);
     CHECK((osd_style&(WS_EX_LAYERED|WS_EX_TRANSPARENT|WS_EX_NOACTIVATE|WS_EX_TOOLWINDOW))==
         (WS_EX_LAYERED|WS_EX_TRANSPARENT|WS_EX_NOACTIVATE|WS_EX_TOOLWINDOW));
     CHECK(SendMessageW(osd,WM_NCHITTEST,0,0)==HTTRANSPARENT);
     CHECK(SendMessageW(osd,WM_MOUSEACTIVATE,0,0)==MA_NOACTIVATE);
+    // Activation can arrive before the game becomes foreground. Returning from
+    // a same-thread popup need not produce another WM_ACTIVATEAPP notification.
+    auto popup=CreateWindowW(L"STATIC",L"activation probe",WS_OVERLAPPEDWINDOW|WS_VISIBLE,
+        0,0,120,100,nullptr,nullptr,wc.hInstance,nullptr);
+    CHECK(popup); SetForegroundWindow(popup); CHECK(GetForegroundWindow()==popup);
+    SendMessageW(window,WM_ACTIVATEAPP,TRUE,0); CHECK(!game_active);
+    SetForegroundWindow(window); CHECK(GetForegroundWindow()==window);
+    MSG activation_message{};
+    while(PeekMessageW(&activation_message,window,0,0,PM_REMOVE)) DispatchMessageW(&activation_message);
+    const int before_click=accepted_clicks;
+    SendMessageW(window,WM_LBUTTONDOWN,MK_LBUTTON,MAKELPARAM(1,1));
+    CHECK(game_active && accepted_clicks==before_click+1);
+    // A disabled owner/modal dialog must not be reactivated by a queued retry.
+    SetForegroundWindow(popup);
+    SendMessageW(window,WM_ACTIVATEAPP,TRUE,0); CHECK(!game_active);
+    EnableWindow(window,FALSE);
+    while(PeekMessageW(&activation_message,window,0,0,PM_REMOVE)) DispatchMessageW(&activation_message);
+    CHECK(!game_active && GetForegroundWindow()==popup);
+    EnableWindow(window,TRUE);
+    SetForegroundWindow(window);
+    while(PeekMessageW(&activation_message,window,0,0,PM_REMOVE)) DispatchMessageW(&activation_message);
+    CHECK(game_active);
+    DestroyWindow(popup);
     // Native modal dialogs disable their owner without deactivating the process.
     EnableWindow(window,FALSE);
     SendMessageW(osd,WM_TIMER,1,0);

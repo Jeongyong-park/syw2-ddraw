@@ -41,7 +41,7 @@ struct PerformanceOsd::Impl {
         WNDCLASSW wc{}; wc.hInstance=module; wc.lpfnWndProc=proc; wc.lpszClassName=L"HQCDD.PerformanceOSD";
         if(!RegisterClassW(&wc) && GetLastError()!=ERROR_CLASS_ALREADY_EXISTS) return false;
         window=CreateWindowExW(WS_EX_LAYERED|WS_EX_TRANSPARENT|WS_EX_NOACTIVATE|WS_EX_TOOLWINDOW,
-            wc.lpszClassName,L"HQCDD Performance",WS_POPUP,0,0,370,330,owner,nullptr,module,this);
+            wc.lpszClassName,L"HQCDD Performance",WS_POPUP|WS_DISABLED,0,0,370,330,owner,nullptr,module,this);
         if(!window) return false;
         SetLayeredWindowAttributes(window,0,225,LWA_ALPHA);
         if(!font) font=CreateFontW(-15,0,0,0,FW_NORMAL,FALSE,FALSE,FALSE,DEFAULT_CHARSET,OUT_DEFAULT_PRECIS,CLIP_DEFAULT_PRECIS,CLEARTYPE_QUALITY,FIXED_PITCH,L"Consolas");

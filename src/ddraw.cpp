@@ -87,6 +87,7 @@ bool hook_cursor(Draw* draw);
 LRESULT CALLBACK window_proc(HWND,UINT,WPARAM,LPARAM,UINT_PTR,DWORD_PTR);
 LRESULT CALLBACK child_proc(HWND,UINT,WPARAM,LPARAM,UINT_PTR,DWORD_PTR);
 constexpr UINT WM_HQ_LAYOUT=WM_APP+0x6d0;
+constexpr UINT WM_HQ_ACTIVATION=WM_APP+0x6d1;
 constexpr UINT MENU_FULLSCREEN=0x1e10, MENU_WINDOWED=0x1e20, MENU_SETTINGS=0x1e30, MENU_OSD=0x1e40, MENU_BENCH=0x1e50;
 INT_PTR CALLBACK settings_proc(HWND,UINT,WPARAM,LPARAM);
 LRESULT CALLBACK settings_keys(int,WPARAM,LPARAM);
@@ -141,6 +142,8 @@ public:
     hq::Overlay overlay;
     hq::PerformanceOsd osd;
     bool initial_osd=false;
+    bool game_activation_delivered=false;
+    bool activation_pending=false;
     bool opening_settings=false;
     hq::FrameChange frame_change;
     hq::Rect probe_region{};
@@ -450,6 +453,23 @@ LRESULT CALLBACK window_proc(HWND h, UINT msg, WPARAM w, LPARAM l, UINT_PTR, DWO
     }
     if (msg==WM_PARENTNOTIFY && LOWORD(w)==WM_CREATE) d->add_child(reinterpret_cast<HWND>(l));
     if (msg==WM_HQ_LAYOUT) { d->sync_children(); d->present(); return 0; }
+    if (msg==WM_HQ_ACTIVATION) {
+        d->activation_pending=false;
+        // Recheck after Windows finishes activation. ESL rejects WM_ACTIVATEAPP
+        // if GetForegroundWindow still names a popup or the previous application.
+        if(!d->game_activation_delivered && GetForegroundWindow()==h &&
+           IsWindowVisible(h) && IsWindowEnabled(h) && !IsIconic(h) && !d->settings) {
+            d->game_activation_delivered=true;
+            DefSubclassProc(h,WM_ACTIVATEAPP,TRUE,0);
+            log("Game activation restored after foreground transition");
+            d->osd.suspend(false);
+            d->update_clip(); InvalidateRect(h,nullptr,FALSE);
+        }
+        return 0;
+    }
+    if(msg==WM_ACTIVATE && LOWORD(w)!=WA_INACTIVE && !d->activation_pending) {
+        d->activation_pending=PostMessageW(h,WM_HQ_ACTIVATION,0,0)!=FALSE;
+    }
     if (msg==WM_SIZE || msg==WM_MOVE) {
         if(msg==WM_SIZE && d->settings && !d->layout_busy) d->overlay.layout(d->settings);
         // Do not expose the physical presentation size to legacy game logic.
@@ -475,6 +495,12 @@ LRESULT CALLBACK window_proc(HWND h, UINT msg, WPARAM w, LPARAM l, UINT_PTR, DWO
         d->sync_children(); d->update_clip(); d->present(); return 0;
     }
     if (msg==WM_ACTIVATEAPP) {
+        d->game_activation_delivered=w && GetForegroundWindow()==h && !IsIconic(h);
+        // Let the game see the activation before OSD visibility work can reenter
+        // window activation. Do not synthesize periodic activation notifications.
+        const auto result=DefSubclassProc(h,msg,w,l);
+        if(w && !d->game_activation_delivered && !d->activation_pending)
+            d->activation_pending=PostMessageW(h,WM_HQ_ACTIVATION,0,0)!=FALSE;
         hq::perf::mark("app_activation",w?1:0);
         if(d->probe_enabled) {
             d->frame_change.reset(); d->probe_resume=hq::PerformanceOsd::now()+250;
@@ -483,6 +509,7 @@ LRESULT CALLBACK window_proc(HWND h, UINT msg, WPARAM w, LPARAM l, UINT_PTR, DWO
         d->osd.suspend(!w || d->settings!=nullptr);
         if (!w && d->clip_owned) { ClipCursor(nullptr); d->clip_owned=false; }
         if (w) { d->update_clip(); InvalidateRect(h,nullptr,FALSE); }
+        return result;
     }
     if (msg==WM_ERASEBKGND) return 1; // present paints both the image and letterbox bars
     if (msg==WM_PAINT) {
