@@ -9,7 +9,7 @@ spec.loader.exec_module(timing)
 
 def rows(ticks, step=0.01):
     return [dict(time_s=i * step, ticks=value, state=3, speed_option=2,
-                 base_ms=50, width=800, height=600, foreground=True, read_ms=0.1)
+                 base_ms=50, requested_interval_ms=50, width=800, height=600, foreground=True, read_ms=0.1)
             for i, value in enumerate(ticks)]
 
 
@@ -31,7 +31,7 @@ class TimingTests(unittest.TestCase):
         self.assertFalse(timing.summarize(rows([1, 2]), 10)['valid_for_comparison'])
         self.assertFalse(timing.summarize(rows([1, 1]), 10, True)['valid_for_comparison'])
         for key, value in [('foreground', False), ('state', 4), ('speed_option', 1),
-                           ('width', 1068), ('read_ms', 20)]:
+                           ('requested_interval_ms', 60), ('width', 1068), ('read_ms', 20)]:
             sample = rows([1, 2]); sample[1][key] = value
             self.assertFalse(timing.summarize(sample, 10, True)['valid_for_comparison'], key)
         self.assertFalse(timing.summarize(rows([1, 2], 0.2), 10, True)['valid_for_comparison'])

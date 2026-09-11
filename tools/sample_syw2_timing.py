@@ -38,11 +38,11 @@ def summarize(samples, poll_ms, scene_verified=False):
     if elapsed <= 0:
         raise ValueError('Nonpositive observation duration')
     reasons, observations, gaps = [], [], []
-    stable = ('state', 'speed_option', 'base_ms', 'width', 'height')
+    stable = ('state', 'speed_option', 'base_ms', 'requested_interval_ms', 'width', 'height')
     if not scene_verified:
         reasons.append('Battle scene not verified by operator')
     if any(any(s[k] != first[k] for k in stable) for s in samples):
-        reasons.append('State, speed or dimensions changed')
+        reasons.append('State, speed, requested interval or dimensions changed')
     if not all(s['foreground'] for s in samples):
         reasons.append('Game was not foreground at every sample')
     total_ticks, flat_start, longest_flat = 0, first['time_s'], 0.0
