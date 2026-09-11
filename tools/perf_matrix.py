@@ -137,6 +137,7 @@ def main():
     manifest['source_ini_sha256']=hashlib.sha256(original_ini).hexdigest()
     manifest['source_ini_present']=(game/'hqcdd.ini').exists()
     manifest['platform']=os.sys.getwindowsversion()[:]
+    manifest['frame_region_requested']=os.environ.get('HQCDD_PERF_REGION')
     manifest['presentmon']=str(a.presentmon.resolve()) if a.presentmon else None
     if a.presentmon: manifest['presentmon_sha256']=digest(a.presentmon.resolve(strict=True))
     (target/'manifest.json').write_text(json.dumps(manifest,indent=2),encoding='utf-8')

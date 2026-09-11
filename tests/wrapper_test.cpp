@@ -333,7 +333,35 @@ int wmain(int argc, wchar_t** argv) {
         CHECK(wcscmp(stored_filter,L"bilinear")==0);
         CHECK(GetPrivateProfileIntW(L"Display",L"Fullscreen",-1,config.c_str())==0);
     }
-    // Leave it open to exercise owner/Draw teardown with a live dialog and hook.
+    // Performance popup must not consume input or compete with the display dialog.
+    SendMessageW(settings,WM_CLOSE,0,0);
+    SetForegroundWindow(window);
+    const auto osd_focus=GetFocus();
+    SendMessageW(window,WM_SYSCOMMAND,0x1e40,0);
+    const auto osd=FindWindowW(L"HQCDD.PerformanceOSD",L"HQCDD Performance");
+    CHECK(osd && GetWindow(osd,GW_OWNER)==window);
+    CHECK(GetFocus()==osd_focus);
+    const auto osd_style=GetWindowLongPtrW(osd,GWL_EXSTYLE);
+    CHECK((osd_style&(WS_EX_LAYERED|WS_EX_TRANSPARENT|WS_EX_NOACTIVATE|WS_EX_TOOLWINDOW))==
+        (WS_EX_LAYERED|WS_EX_TRANSPARENT|WS_EX_NOACTIVATE|WS_EX_TOOLWINDOW));
+    CHECK(SendMessageW(osd,WM_NCHITTEST,0,0)==HTTRANSPARENT);
+    CHECK(SendMessageW(osd,WM_MOUSEACTIVATE,0,0)==MA_NOACTIVATE);
+    // Native modal dialogs disable their owner without deactivating the process.
+    EnableWindow(window,FALSE);
+    SendMessageW(osd,WM_TIMER,1,0);
+    CHECK(!IsWindowVisible(osd));
+    EnableWindow(window,TRUE);
+    SetForegroundWindow(window);
+    SendMessageW(osd,WM_TIMER,1,0);
+    SendMessageW(window,WM_SYSCOMMAND,0x1e50,0);
+    SendMessageW(window,WM_SYSCOMMAND,0x1e50,0);
+    SendMessageW(window,WM_SYSCOMMAND,0x1e40,0);
+    CHECK(!IsWindowVisible(osd));
+    SendMessageW(window,WM_SYSCOMMAND,0x1e40,0);
+    SendMessageW(window,WM_SYSCOMMAND,0x1e30,0);
+    settings=FindWindowExW(window,nullptr,L"#32770",nullptr);
+    CHECK(settings && !IsWindowVisible(osd));
+    // Leave both open to exercise owner/Draw teardown with live popups and hook.
     DestroyWindow(edit);
     clipper->Release();
     // Releasing Draw first must not invalidate surfaces or palettes.
@@ -344,6 +372,7 @@ int wmain(int argc, wchar_t** argv) {
     DestroyWindow(window); UnregisterClassW(wc.lpszClassName,wc.hInstance);
     FreeLibrary(dll);
     CHECK(!IsWindow(settings));
+    CHECK(!IsWindow(osd));
     std::puts("PASS: pixels, GPU/GDI, fullscreen, resize, child layout, settings live apply, focus, cancel and teardown");
     return 0;
 }

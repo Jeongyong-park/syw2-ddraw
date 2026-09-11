@@ -1,11 +1,15 @@
 # 성능 진단 및 자동 검사
 
+30개 이상 유닛 조건은 [37창병 세이브 기반 검증](battle-37-benchmark.md)을 참고한다. 일반 ESL 클라이언트의 세이브와 재불러오기 증거, 유효한 30초 커서·출력 측정, 무효 처리한 이동 측정을 구분해 기록했다.
+
 ## 현재 구현 범위
 
 - Unicorn: 실제 viewport·클램프 코드 3,852개 결정적 시나리오. 확대·축소·여백·경계 클릭·연속 이동·정지·반전을 검사한다.
 - Windows 내부 계측: QPC 기반 CPU 소요 시간과 호출 시각 CSV. 기본 비활성화.
 - 비교 실행기: 별도 게임 복사본에서 렌더러/필터/VSync/창·전체화면 조합을 반복하고 조건별 JSON 생성.
 - 분석기: p50/p95/p99·최대 시간, 출력 API 호출 간격과 호출률. 표시 FPS와 입력→화면 지연은 null.
+- 실시간 OSD: Ctrl+Alt+F로 표시, Ctrl+Alt+B로 벤치마크. [지표와 사용법](performance-osd.md).
+- 선택적 전장 영역 비교: `HQCDD_PERF_REGION=x,y,width,height`와 내부 CSV 계측을 함께 활성화하면 원본 RGB 변화와 반복 구간을 기록한다. [설정과 한계](frame-change-diagnostics.md).
 
 Unicorn의 DPI 시나리오는 주어진 크기의 산술 검증이며 Windows DPI API를 에뮬레이션하지 않는다.
 가상 시간에 따른 EXE 내부 게임 틱·커서 그리기 검증은 아직 추가하지 않았다.

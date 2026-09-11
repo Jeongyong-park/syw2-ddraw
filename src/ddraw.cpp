@@ -21,6 +21,8 @@
 #include "settings_ids.h"
 #include "overlay.h"
 #include "perf.h"
+#include "osd.h"
+#include "frame_change.h"
 
 namespace {
 std::recursive_mutex mutex;
@@ -76,7 +78,7 @@ bool hook_cursor(Draw* draw);
 LRESULT CALLBACK window_proc(HWND,UINT,WPARAM,LPARAM,UINT_PTR,DWORD_PTR);
 LRESULT CALLBACK child_proc(HWND,UINT,WPARAM,LPARAM,UINT_PTR,DWORD_PTR);
 constexpr UINT WM_HQ_LAYOUT=WM_APP+0x6d0;
-constexpr UINT MENU_FULLSCREEN=0x1e10, MENU_WINDOWED=0x1e20, MENU_SETTINGS=0x1e30;
+constexpr UINT MENU_FULLSCREEN=0x1e10, MENU_WINDOWED=0x1e20, MENU_SETTINGS=0x1e30, MENU_OSD=0x1e40, MENU_BENCH=0x1e50;
 INT_PTR CALLBACK settings_proc(HWND,UINT,WPARAM,LPARAM);
 LRESULT CALLBACK settings_keys(int,WPARAM,LPARAM);
 HWND settings_window=nullptr;
@@ -128,8 +130,23 @@ public:
     HHOOK settings_hook=nullptr;
     bool gpu_preferred=true;
     hq::Overlay overlay;
+    hq::PerformanceOsd osd;
+    bool initial_osd=false;
     bool opening_settings=false;
+    hq::FrameChange frame_change;
+    hq::Rect probe_region{};
+    bool probe_enabled=false;
+    double probe_resume=0;
     Draw() {
+        wchar_t region[128]{}; int x=0,y=0,w=0,h=0; wchar_t trailing=0;
+        const auto region_length=GetEnvironmentVariableW(L"HQCDD_PERF_REGION",region,128);
+        if(region_length && region_length<128 && swscanf_s(region,L"%d,%d,%d,%d%c",&x,&y,&w,&h,&trailing,1u)==4 &&
+           x>=0 && y>=0 && x<=8192 && y<=8192 && w>0 && h>0 && w<=800 && h<=600) {
+            probe_region={x,y,x+w,y+h}; probe_enabled=true;
+            log("frame probe requested: region=%d,%d,%d,%d stride=2 cursor_margin=64 settle_ms=250",x,y,w,h);
+        }
+        else if(region_length) log("frame probe disabled: invalid HQCDD_PERF_REGION");
+        initial_osd=GetPrivateProfileIntW(L"Diagnostics",L"OSD",0,local_path(L"hqcdd.ini").c_str())!=0;
         windowed=GetPrivateProfileIntW(L"Display",L"Fullscreen",0,local_path(L"hqcdd.ini").c_str())==0;
         wchar_t renderer[32]{};
         GetPrivateProfileStringW(L"Display",L"Renderer",L"auto",renderer,32,local_path(L"hqcdd.ini").c_str());
@@ -397,8 +414,10 @@ LRESULT CALLBACK window_proc(HWND h, UINT msg, WPARAM w, LPARAM l, UINT_PTR, DWO
             hq::perf::mark("mouse_injected_entry",static_cast<long>(tag & 0xffffu));
     }
     auto d=reinterpret_cast<Draw*>(data);
+    const auto input_start=d->osd.enabled() && msg>=WM_MOUSEMOVE && msg<=WM_MBUTTONDBLCLK ? hq::PerformanceOsd::now():0;
     std::unique_lock<std::recursive_mutex> lock(mutex,std::defer_lock);
     { hq::perf::Scope wait(msg>=WM_MOUSEMOVE && msg<=WM_MBUTTONDBLCLK?"mouse_lock_wait":nullptr); lock.lock(); }
+    if(input_start) d->osd.input_wait(hq::PerformanceOsd::now()-input_start);
     if (d->hotkey(msg,w,l)) return 0;
     if (msg==WM_INITMENU) {
         auto result=DefSubclassProc(h,msg,w,l);
@@ -406,12 +425,16 @@ LRESULT CALLBACK window_proc(HWND h, UINT msg, WPARAM w, LPARAM l, UINT_PTR, DWO
         if (menu && reinterpret_cast<HMENU>(w)==menu && GetMenuState(menu,MENU_SETTINGS,MF_BYCOMMAND)==UINT(-1)) {
             AppendMenuW(menu,MF_SEPARATOR,0,nullptr);
             AppendMenuW(menu,MF_STRING,MENU_SETTINGS,L"디스플레이 설정 (Ctrl+Alt+D)");
+            AppendMenuW(menu,MF_STRING,MENU_OSD,L"성능 오버레이 (Ctrl+Alt+F)");
+            AppendMenuW(menu,MF_STRING,MENU_BENCH,L"벤치마크 시작/종료 (Ctrl+Alt+B)");
             AppendMenuW(menu,MF_STRING,MENU_FULLSCREEN,L"전체화면 (Alt+Enter)");
             AppendMenuW(menu,MF_STRING,MENU_WINDOWED,L"창 모드 (Alt+Enter)");
         }
         return result;
     }
     if (msg==WM_SYSCOMMAND) {
+        if ((w&0xfff0)==MENU_OSD) { d->osd.toggle(); return 0; }
+        if ((w&0xfff0)==MENU_BENCH) { d->osd.benchmark(); return 0; }
         if ((w&0xfff0)==MENU_SETTINGS) { d->open_settings(); return 0; }
         if ((w&0xfff0)==MENU_FULLSCREEN) { d->set_windowed(false); return 0; }
         if ((w&0xfff0)==MENU_WINDOWED) { d->set_windowed(true); return 0; }
@@ -443,6 +466,12 @@ LRESULT CALLBACK window_proc(HWND h, UINT msg, WPARAM w, LPARAM l, UINT_PTR, DWO
         d->sync_children(); d->update_clip(); d->present(); return 0;
     }
     if (msg==WM_ACTIVATEAPP) {
+        hq::perf::mark("app_activation",w?1:0);
+        if(d->probe_enabled) {
+            d->frame_change.reset(); d->probe_resume=hq::PerformanceOsd::now()+250;
+            hq::perf::mark("frame_region_unavailable",2);
+        }
+        d->osd.suspend(!w || d->settings!=nullptr);
         if (!w && d->clip_owned) { ClipCursor(nullptr); d->clip_owned=false; }
         if (w) { d->update_clip(); InvalidateRect(h,nullptr,FALSE); }
     }
@@ -452,6 +481,7 @@ LRESULT CALLBACK window_proc(HWND h, UINT msg, WPARAM w, LPARAM l, UINT_PTR, DWO
         d->present(); return 0;
     }
     if (msg==WM_NCDESTROY) {
+        d->osd.close();
         d->close_settings();
         if (d->settings_hook) { UnhookWindowsHookEx(d->settings_hook); d->settings_hook=nullptr; }
         if (shortcut_draw==d) shortcut_draw=nullptr;
@@ -468,12 +498,17 @@ LRESULT CALLBACK window_proc(HWND h, UINT msg, WPARAM w, LPARAM l, UINT_PTR, DWO
         hq::perf::mark("mouse_mapped",x,y);
         return DefSubclassProc(h,msg,w,l);
     }
+    // The game's timer callback runs after our handling. Keep it separate from
+    // rendering/OSD work; callback duration does not measure simulation ticks.
+    hq::perf::Scope callback(msg==WM_TIMER?"game_timer_dispatch":nullptr,static_cast<long>(w));
     return DefSubclassProc(h,msg,w,l);
 }
 
 LRESULT CALLBACK child_proc(HWND h, UINT msg, WPARAM w, LPARAM l, UINT_PTR, DWORD_PTR data) {
     auto d=reinterpret_cast<Draw*>(data);
+    const auto input_start=d->osd.enabled() && msg>=WM_MOUSEMOVE && msg<=WM_MBUTTONDBLCLK ? hq::PerformanceOsd::now():0;
     Guard lock(mutex);
+    if(input_start) d->osd.input_wait(hq::PerformanceOsd::now()-input_start);
     if (d->hotkey(msg,w,l)) return 0; // Alt+Enter also works with the ID/IME control focused
     if (msg==WM_PARENTNOTIFY && LOWORD(w)==WM_CREATE) d->add_child(reinterpret_cast<HWND>(l));
     auto it=d->children.find(h);
@@ -517,6 +552,7 @@ LRESULT CALLBACK child_proc(HWND h, UINT msg, WPARAM w, LPARAM l, UINT_PTR, DWOR
 }
 
 Draw::~Draw() {
+    osd.close();
     close_settings();
     restore_overlay_input();
     if (settings_hook) { UnhookWindowsHookEx(settings_hook); settings_hook=nullptr; }
@@ -538,6 +574,7 @@ Draw::~Draw() {
         RemoveWindowSubclass(window,window_proc,1);
         if (auto menu=GetSystemMenu(window,FALSE)) {
             DeleteMenu(menu,MENU_FULLSCREEN,MF_BYCOMMAND); DeleteMenu(menu,MENU_WINDOWED,MF_BYCOMMAND); DeleteMenu(menu,MENU_SETTINGS,MF_BYCOMMAND);
+            DeleteMenu(menu,MENU_OSD,MF_BYCOMMAND); DeleteMenu(menu,MENU_BENCH,MF_BYCOMMAND);
         }
         if (styled) {
             SetWindowLongPtrW(window,GWL_STYLE,old_style); SetWindowLongPtrW(window,GWL_EXSTYLE,old_exstyle);
@@ -562,10 +599,12 @@ LRESULT CALLBACK settings_keys(int code, WPARAM w, LPARAM l) {
         auto msg=reinterpret_cast<MSG*>(l);
         const bool target=msg->hwnd==shortcut_draw->window || IsChild(shortcut_draw->window,msg->hwnd) ||
             msg->hwnd==settings_window || (settings_window && IsChild(settings_window,msg->hwnd));
-        const bool key=msg->wParam=='D' && (GetKeyState(VK_CONTROL)&0x8000) && (GetKeyState(VK_MENU)&0x8000);
+        const bool key=(msg->wParam=='D' || msg->wParam=='F' || msg->wParam=='B') && (GetKeyState(VK_CONTROL)&0x8000) && (GetKeyState(VK_MENU)&0x8000);
         if (target && key && (msg->message==WM_KEYDOWN || msg->message==WM_SYSKEYDOWN)) {
             if (!(msg->lParam&(LPARAM(1)<<30))) {
-                if (IsWindow(settings_window)) PostMessageW(settings_window,WM_CLOSE,0,0);
+                if(msg->wParam=='F') shortcut_draw->osd.toggle();
+                else if(msg->wParam=='B') shortcut_draw->osd.benchmark();
+                else if (IsWindow(settings_window)) PostMessageW(settings_window,WM_CLOSE,0,0);
                 else shortcut_draw->open_settings();
             }
             msg->message=WM_NULL;
@@ -602,10 +641,12 @@ void Draw::open_settings() {
     sync_children();
     update_clip();
     ShowWindow(settings,SW_SHOW); SetFocus(GetDlgItem(settings,IDC_WINDOWED));
+    osd.suspend(true);
     begin_overlay_cursor();
     log("Display overlay opened");
 }
 void Draw::close_settings() {
+    osd.suspend(false);
     end_overlay_cursor();
     HWND h=settings; settings=nullptr;
     if (settings_window==h) settings_window=nullptr;
@@ -621,6 +662,7 @@ void Draw::apply_settings() {
     const bool use_gpu=SendDlgItemMessageW(settings,IDC_RENDERER,CB_GETCURSEL,0,0)==0;
     const bool use_window=SendDlgItemMessageW(settings,IDC_MODE,CB_GETCURSEL,0,0)==0;
     gpu.reset(); gpu_reported=false; gpu_enabled=use_gpu; gpu_preferred=use_gpu;
+    osd.reset();
     scaling=int(SendDlgItemMessageW(settings,IDC_SCALING,CB_GETCURSEL,0,0));
     if(scaling<0 || scaling>hq::Integer) scaling=hq::Nearest;
     overlay.integer_scaling=scaling==hq::Integer;
@@ -710,6 +752,7 @@ INT_PTR CALLBACK settings_proc(HWND h, UINT msg, WPARAM w, LPARAM l) {
         end_overlay_cursor();
         if (settings_window==h) settings_window=nullptr;
         d->settings=nullptr;
+        d->osd.suspend(false);
         d->update_children_clipping();
     }
     return FALSE;
@@ -728,11 +771,14 @@ void Draw::update_clip() {
 }
 void Draw::set_windowed(bool value) {
     if (value==windowed || !IsWindow(window)) return;
+    osd.suspend(true);
     if (windowed) {
         windowed_placement.length=sizeof(windowed_placement);
         have_placement=GetWindowPlacement(window,&windowed_placement)!=FALSE;
     }
     windowed=value; resize(); sync_children(); update_clip(); present();
+    osd.reset();
+    osd.suspend(settings!=nullptr);
     log("Presentation mode: %s",windowed?"windowed":"borderless fullscreen");
 }
 void Draw::resize() {
@@ -871,16 +917,39 @@ void Draw::present(const char* reason, const hq::Rect* dirty) {
         hq::perf::mark("output_skipped",presenting?1:layout_busy?2:!primary?3:primary->busy()?4:!IsWindow(window)?5:6);
         return;
     }
+    const auto osd_start=osd.enabled()?hq::PerformanceOsd::now():0;
     presenting=true;
     struct Reset { bool& b; ~Reset(){b=false;} } reset{presenting};
     try {
         { hq::perf::Scope stage("child_layout"); sync_children(); }
         hq::Palette pal{};
         if (primary->palette) pal=primary->palette->colors();
+        if(probe_enabled && hq::perf::recorder().enabled) {
+            hq::perf::Scope stage("frame_probe_cpu");
+            const double t=hq::PerformanceOsd::now();
+            POINT cursor{}; DWORD foreground=0;
+            GetWindowThreadProcessId(GetForegroundWindow(),&foreground);
+            bool blocked=settings || !IsWindowEnabled(window) || foreground!=GetCurrentProcessId() ||
+                GetAncestor(GetForegroundWindow(),GA_ROOT)!=window || !original_cursor(&cursor) || !ScreenToClient(window,&cursor);
+            const auto v=viewport();
+            const int cx=v.game_x(cursor.x),cy=v.game_y(cursor.y);
+            // Conservatively reject the entire ROI near the cursor, then settle.
+            blocked=blocked || (cx>=probe_region.left-64 && cx<probe_region.right+64 &&
+                cy>=probe_region.top-64 && cy<probe_region.bottom+64);
+            if(blocked) probe_resume=t+250;
+            if(blocked || t<probe_resume) {
+                frame_change.reset(); hq::perf::mark("frame_region_unavailable",1);
+            } else {
+                const auto result=frame_change.sample(*primary->image,pal,probe_region);
+                hq::perf::mark(result.baseline?"frame_region_baseline":result.compared?"frame_region_change":"frame_region_unavailable",
+                    result.changed,result.compared);
+            }
+        }
         if (gpu_enabled) {
             if (!gpu) gpu=std::make_unique<hq::Gpu>();
             HRESULT hr=gpu->present(window,*primary->image,pal,viewport(),vsync,scaling);
             if (SUCCEEDED(hr)) {
+                osd.frame(osd_start,true,scaling,vsync,primary->image->width,primary->image->height);
                 if (!gpu_reported) { log("D3D11 hardware presentation active"); gpu_reported=true; }
                 return;
             }
@@ -910,10 +979,12 @@ void Draw::present(const char* reason, const hq::Rect* dirty) {
                            {0,v.y,v.x,v.y+v.height},{v.x+v.width,v.y,client.right,v.y+v.height}};
         for (auto& bar:bars) FillRect(dc,&bar,static_cast<HBRUSH>(GetStockObject(BLACK_BRUSH)));
         SetStretchBltMode(dc,COLORONCOLOR);
+        int copied=0;
         { hq::perf::Scope stage("gdi_blit");
-          StretchDIBits(dc,v.x,v.y,v.width,v.height,0,0,primary->image->width,
+          copied=StretchDIBits(dc,v.x,v.y,v.width,v.height,0,0,primary->image->width,
                       primary->image->height,pixels.data(),&info,DIB_RGB_COLORS,SRCCOPY); }
         ::ReleaseDC(window,dc);
+        if(copied && copied!=GDI_ERROR) osd.frame(osd_start,false,scaling==hq::Integer?hq::Integer:hq::Nearest,false,primary->image->width,primary->image->height);
     } catch (const std::bad_alloc&) { log("presentation allocation failed"); }
 }
 HRESULT Draw::SetCooperativeLevel(HWND h, DWORD flags) {
@@ -933,12 +1004,18 @@ HRESULT Draw::SetCooperativeLevel(HWND h, DWORD flags) {
     if (!settings_hook) settings_hook=SetWindowsHookExW(WH_GETMESSAGE,settings_keys,nullptr,GetCurrentThreadId());
     if (auto menu=GetSystemMenu(window,FALSE)) {
         DeleteMenu(menu,MENU_FULLSCREEN,MF_BYCOMMAND); DeleteMenu(menu,MENU_WINDOWED,MF_BYCOMMAND); DeleteMenu(menu,MENU_SETTINGS,MF_BYCOMMAND);
+        DeleteMenu(menu,MENU_OSD,MF_BYCOMMAND); DeleteMenu(menu,MENU_BENCH,MF_BYCOMMAND);
         AppendMenuW(menu,MF_STRING,MENU_SETTINGS,L"디스플레이 설정 (Ctrl+Alt+D)");
+        AppendMenuW(menu,MF_STRING,MENU_OSD,L"성능 오버레이 (Ctrl+Alt+F)");
+        AppendMenuW(menu,MF_STRING,MENU_BENCH,L"벤치마크 시작/종료 (Ctrl+Alt+B)");
         AppendMenuW(menu,MF_STRING,MENU_FULLSCREEN,L"전체화면 (Alt+Enter)");
         AppendMenuW(menu,MF_STRING,MENU_WINDOWED,L"창 모드 (Alt+Enter)");
     }
     if (!hook_cursor(this)) log("GetCursorPos import not found; host may already use client coordinates");
-    resize(); return DD_OK;
+    resize();
+    osd.attach(window,module);
+    if(initial_osd) { osd.toggle(); initial_osd=false; }
+    return DD_OK;
 }
 
 BOOL WINAPI game_cursor(LPPOINT point) {
