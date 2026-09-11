@@ -149,6 +149,14 @@ CI는 세 ZIP을 생성하고 이 테스트를 실행한 뒤 ZIP과 해시를 �
 | `tests/support/wide_terrain_model.h` | 테스트 전용 초기 캐시 모델. 운영 구현과 구분 |
 | `prepare.py`, `launch.ps1` | 개발·비교용 별도 실행본 생성과 검증·실행 |
 | `package.py` | 배포 파일 선택 및 ZIP 생성 |
+| `tools/perf/` | 성능 보고서·실행기·게임 틱 관측 구현 |
+| `tools/widescreen/` | 와이드 조사·생성·검증 도구 구현 |
+
+기존 `python tools/perf_matrix.py ...` 등의 명령은 호환 진입점으로 유지합니다.
+저장소 루트에서는 `python -m tools.perf.perf_matrix ...`도 사용할 수 있습니다.
+패키지 안의 파일을 직접 실행하지 않습니다. 상세 도구 분류와 실행 방식은
+개발자 소스의 `tools/README.md`에 있습니다. 개발자 ZIP에는 패키지와 호환 진입점을
+모두 포함하며, 사용자 ASI/DLL ZIP에는 Python 도구를 포함하지 않습니다.
 
 GDI 입력창과의 호환성을 위해 windowed blt-model swap chain을 사용합니다.
 전체화면은 borderless 방식이고 Alt+Enter는 래퍼가 관리합니다.

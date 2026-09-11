@@ -35,8 +35,8 @@ Ctrl+Alt+D에서 전장 비율을 선택하고 저장한 뒤 게임을 재실행
 | `src/widescreen_runtime.*` | 원본 검증, 동적 메모리 할당, 재배치와 패치 적용 |
 | `src/widescreen_recipe.h` | 생성된 167개 패치와 중계 코드. 직접 편집하지 않음 |
 | `src/battle_aspect.h` | 비율 초기화와 과거 시제품 EXE의 복원 표 호환 |
-| `tools/export_widescreen_patch.py` | 검증된 원본·시제품으로 패치 명세 생성 |
-| `tools/widescreen_*.py`, `tools/verify_widescreen_*.py` | 선택적 로컬 분석·에뮬레이션 |
+| `tools/widescreen/export_widescreen_patch.py` | 검증된 원본·시제품으로 패치 명세 생성 |
+| `tools/widescreen/` | 선택적 로컬 분석·에뮬레이션 구현 |
 | `tests/support/wide_terrain_model.h` | 초기 512줄 CPU 캐시 모델. 운영 캐시가 아님 |
 | `tests/widescreen_test.cpp` | 위 초기 모델의 복사·스크롤 검사 |
 | `tests/widescreen_runtime_test.cpp` | 운영 패치 경로의 검증·재배치·충돌 검사 |
@@ -44,5 +44,9 @@ Ctrl+Alt+D에서 전장 비율을 선택하고 저장한 뒤 게임을 재실행
 운영 캐시는 1088×608이며 600줄을 복사합니다. 초기 512줄 모델 테스트의 통과를
 운영 렌더링 검증으로 취급하지 않습니다. 분석 도구는 게임 파일과 pefile/Unicorn 등
 별도 의존성이 필요하며 사용자 설치에는 필요하지 않습니다.
+
+기존 `tools/export_widescreen_patch.py`, `tools/verify_widescreen_*.py` 등의 경로는
+호환 진입점으로 유지합니다. 새 경로는 저장소 루트에서
+`python -m tools.widescreen.export_widescreen_patch ...` 형태로 실행합니다.
 
 변경 근거와 개별 실험 결과는 [분석 기록](widescreen-analysis.md)에 보존합니다.
