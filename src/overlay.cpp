@@ -77,6 +77,11 @@ void Overlay::init(HWND h) {
         auto button=CreateWindowW(L"BUTTON",i.title,WS_CHILD|WS_VISIBLE|WS_TABSTOP|BS_OWNERDRAW,0,0,1,1,h,reinterpret_cast<HMENU>(INT_PTR(i.id)),GetModuleHandleW(nullptr),nullptr);
         SetWindowSubclass(button,button_proc,5,0);
     }
+    for(auto i:{Item{IDC_ASPECT_43,L"4:3"},Item{IDC_ASPECT_169,L"16:9"}}) {
+        auto button=CreateWindowW(L"BUTTON",i.title,WS_CHILD|WS_VISIBLE|WS_TABSTOP|BS_OWNERDRAW,0,0,1,1,h,reinterpret_cast<HMENU>(INT_PTR(i.id)),GetModuleHandleW(nullptr),nullptr);
+        SetWindowSubclass(button,button_proc,5,0);
+        EnableWindow(button,aspect_available);
+    }
     SetWindowTextW(GetDlgItem(h,IDC_APPLY),L"변경 적용");
     SetWindowTextW(GetDlgItem(h,IDCANCEL),L"닫기");
     for(auto i:{Item{IDC_TAB_DISPLAY,L"디스플레이"},Item{IDC_TAB_SYW2X,L"SYW2X"}}) {
@@ -115,14 +120,15 @@ void Overlay::layout(HWND h) {
     heading=font(30,FW_BOLD); body=font(15,FW_MEDIUM); small_font=font(12,FW_NORMAL);
     struct Item{int id,a,b,c,d;};
     for(auto i:{Item{IDC_WINDOWED,300,125,431,164},Item{IDC_FULLSCREEN,437,125,568,164},
-        Item{IDC_GPU,300,197,431,236},Item{IDC_GDI,437,197,568,236},
-        Item{IDC_NEAREST,300,265,431,292},Item{IDC_BILINEAR,437,265,568,292},
-        Item{IDC_SHARP,300,298,431,325},Item{IDC_INTEGER,437,298,568,325},Item{IDC_VSYNC,494,333,568,367},
+        Item{IDC_ASPECT_43,300,176,431,210},Item{IDC_ASPECT_169,437,176,568,210},
+        Item{IDC_GPU,300,221,431,255},Item{IDC_GDI,437,221,568,255},
+        Item{IDC_NEAREST,300,270,431,297},Item{IDC_BILINEAR,437,270,568,297},
+        Item{IDC_SHARP,300,303,431,330},Item{IDC_INTEGER,437,303,568,330},Item{IDC_VSYNC,494,346,568,380},
         Item{IDC_SAVE,30,452,295,488},Item{IDCANCEL,316,452,406,488},Item{IDC_APPLY,416,452,568,488},
         Item{IDC_TAB_DISPLAY,370,42,470,78},Item{IDC_TAB_SYW2X,478,42,570,78}}) {
         auto r=rect(i.a,i.b,i.c,i.d); SetWindowPos(GetDlgItem(h,i.id),nullptr,r.left,r.top,r.right-r.left,r.bottom-r.top,SWP_NOZORDER|SWP_NOACTIVATE);
     }
-    for(int id:{IDC_WINDOWED,IDC_FULLSCREEN,IDC_GPU,IDC_GDI,IDC_NEAREST,IDC_BILINEAR,IDC_SHARP,IDC_INTEGER,IDC_VSYNC,IDC_SAVE})
+    for(int id:{IDC_WINDOWED,IDC_FULLSCREEN,IDC_GPU,IDC_GDI,IDC_NEAREST,IDC_BILINEAR,IDC_SHARP,IDC_INTEGER,IDC_VSYNC,IDC_SAVE,IDC_ASPECT_43,IDC_ASPECT_169})
         ShowWindow(GetDlgItem(h,id),syw2x_page?SW_HIDE:SW_SHOWNA);
     for(int i=0;i<12;++i) {
         const int col=i<4?i%2:(i-4)%2, row=i<4?i/2:(i-4)/2;
@@ -197,13 +203,15 @@ void Overlay::paint(HWND h,HDC dc) {
     }
     label(dc,body,rect(30,126,280,148),L"화면 모드",text);
     label(dc,small_font,rect(30,150,280,169),L"화면 비율을 유지해 표시합니다",muted);
-    label(dc,body,rect(30,198,280,220),L"화면 출력",text);
-    label(dc,small_font,rect(30,222,288,241),L"GPU 가속 또는 GDI 호환 출력",muted);
-    fill(dc,rect(30,255,570,256),RGB(57,48,36));
+    label(dc,body,rect(30,176,280,196),L"전장 비율",text);
+    label(dc,small_font,rect(30,197,288,216),aspect_available?L"재실행 후 적용 · HUD 가운데 정렬":L"비율 선택 지원 클라이언트 필요",muted);
+    label(dc,body,rect(30,222,280,242),L"화면 출력",text);
+    label(dc,small_font,rect(30,242,288,261),L"GPU 가속 또는 GDI 호환 출력",muted);
+    fill(dc,rect(30,265,570,266),RGB(57,48,36));
     label(dc,body,rect(30,270,288,292),L"업스케일 방식",text);
     label(dc,small_font,rect(30,295,288,314),L"보간 필터는 GPU 출력에서 사용",muted);
-    label(dc,body,rect(30,333,450,355),L"수직동기화",text);
-    label(dc,small_font,rect(30,358,475,377),L"게임 진행 속도에 영향을 줄 수 있습니다",muted);
+    label(dc,body,rect(30,344,450,366),L"수직동기화",text);
+    label(dc,small_font,rect(30,366,475,385),L"게임 진행 속도에 영향을 줄 수 있습니다",muted);
     fill(dc,rect(30,394,570,395),RGB(57,48,36));
     wchar_t status[256]{}; GetDlgItemTextW(h,IDC_STATUS,status,256);
     label(dc,small_font,rect(30,405,570,439),status,muted,DT_LEFT|DT_WORDBREAK);
@@ -236,6 +244,7 @@ void Overlay::button(HWND h,const DRAWITEMSTRUCT& item) {
         return;
     }
     if(id==IDC_WINDOWED || id==IDC_FULLSCREEN) selected=(SendDlgItemMessageW(h,IDC_MODE,CB_GETCURSEL,0,0)==(id==IDC_WINDOWED?0:1));
+    if(id==IDC_ASPECT_43 || id==IDC_ASPECT_169) selected=aspect_wide==(id==IDC_ASPECT_169);
     if(id==IDC_GPU || id==IDC_GDI) selected=(SendDlgItemMessageW(h,IDC_RENDERER,CB_GETCURSEL,0,0)==(id==IDC_GPU?0:1));
     if(id>=IDC_NEAREST && id<=IDC_INTEGER) selected=SendDlgItemMessageW(h,IDC_SCALING,CB_GETCURSEL,0,0)==id-IDC_NEAREST;
     if(id==IDC_TAB_DISPLAY || id==IDC_TAB_SYW2X) selected=syw2x_page==(id==IDC_TAB_SYW2X);

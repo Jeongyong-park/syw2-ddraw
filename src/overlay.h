@@ -11,6 +11,7 @@ struct Overlay {
     int image_width=0,image_height=0;
     bool integer_scaling=false;
     bool syw2x_page=false,syw2x_available=false;
+    bool aspect_available=false,aspect_wide=false;
     Palette palette=syw2x_palette;
     int palette_target=-1, palette_index=0;
     bool palette_command(HWND,int,int);
