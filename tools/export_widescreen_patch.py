@@ -73,7 +73,7 @@ def export(original, prototype, target):
     lines += ['};','struct CodeRelocation { uint32_t offset; int direction; };',
               'inline constexpr CodeRelocation code_relocations[]={']
     lines += [f'    {{{at},{direction}}},' for at,direction in code_relocations]
-    lines+=['};','}','','']
+    lines+=['};','}','']
     target.write_text('\n'.join(lines),encoding='utf-8')
     return {'source_sha256':digest,'patches':count,'thunk_bytes':offset,
             'patch_relocations':len(patch_relocations),'code_relocations':len(code_relocations),
