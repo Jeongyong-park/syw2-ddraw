@@ -14,6 +14,7 @@ from pathlib import Path
 import random
 import shutil
 import subprocess
+import sys
 import time
 from perf_report import summarize
 from perf_compare import compare, render
@@ -35,6 +36,27 @@ def plan(repeats):
     return jobs
 
 def digest(p): return hashlib.sha256(p.read_bytes()).hexdigest()
+
+
+def tool_hashes():
+    root=Path(__file__).resolve().parent
+    return {name:digest(root/name) for name in ('perf_matrix.py','perf_report.py','perf_compare.py',
+        'presentmon_report.py','perf_cursor.py','perf_input_report.py')}
+
+
+def save_cursor_capture(sweep, run, result):
+    if sweep is None: return
+    result['cursor_injections']=len(sweep.events)
+    try:
+        (run/'cursor-injections.json').write_text(json.dumps(dict(
+            columns=['before_qpc','after_qpc','screen_x','screen_y','sequence'],events=sweep.events,
+            note='SendInput acceptance timestamps; not game processing or display timestamps'),indent=2),encoding='utf-8')
+    except Exception as e:
+        result['cursor_capture_error']=str(e)
+        result['error']='; '.join(filter(None,(result.get('error'),f'Cursor capture save failed: {e}')))
+    finally:
+        try: sweep.restore()
+        except Exception as e: result['cursor_restore_error']=str(e)
 
 def select_jobs(repeats,cases,window_only,trace_mode):
     jobs=plan(repeats)
@@ -78,6 +100,7 @@ def main():
     manifest=dict(scene='main-menu; scene must be verified separately',cursor_sweep=a.cursor_sweep,seed=600,exe_sha256=digest(source),
                   dll_sha256=digest(dll),warmup=a.warmup,seconds=a.seconds,jobs=jobs,
                   runner_sha256=digest(Path(__file__)),
+                  tools_sha256=tool_hashes(),python_version=sys.version,
                   presentmon_tracking='api-only' if a.presentmon_api_only else 'full',
                   limits='No 1:1 window sizing, deterministic battle, or photon measurement; synthetic cursor sweep is not hardware latency')
     if not a.run:
@@ -92,6 +115,8 @@ def main():
     game=target/'game'; shutil.copytree(source.parent,game)
     shutil.copy2(dll,game/'ddraw.dll')
     original_ini=(game/'hqcdd.ini').read_bytes() if (game/'hqcdd.ini').exists() else b''
+    manifest['source_ini_sha256']=hashlib.sha256(original_ini).hexdigest()
+    manifest['source_ini_present']=(game/'hqcdd.ini').exists()
     manifest['platform']=os.sys.getwindowsversion()[:]
     manifest['presentmon']=str(a.presentmon.resolve()) if a.presentmon else None
     if a.presentmon: manifest['presentmon_sha256']=digest(a.presentmon.resolve(strict=True))
@@ -133,12 +158,14 @@ def main():
         for key,value in [('Renderer',job['renderer']),('Scaling',job['scaling']),('VSync',job['vsync']),('Fullscreen',job['fullscreen'])]:
             ini.set('Display',key,str(value))
         with (game/'hqcdd.ini').open('w',encoding='utf-8') as f: ini.write(f)
+        shutil.copy2(game/'hqcdd.ini',run/'hqcdd.ini')
+        settings_hash=digest(run/'hqcdd.ini')
         trace=run/'internal.csv'; env=os.environ.copy(); env.pop('HQCDD_PERF_FILE',None)
         if job['trace_enabled']: env['HQCDD_PERF_FILE']=str(trace)
         log_path=game/'hqcdd.log'; log_start=log_path.stat().st_size if log_path.exists() else 0
         process=subprocess.Popen([str(game/source.name)],cwd=game,env=env)
         monitor=None; monitor_log=None; sweep=None; result=dict(job,pid=process.pid,foreground_lost=False,cursor_sweep=a.cursor_sweep,
-            presentmon_tracking=manifest['presentmon_tracking'])
+            presentmon_tracking=manifest['presentmon_tracking'],settings_sha256=settings_hash)
         print(f'Run {index+1}/{len(jobs)}: {job}',flush=True)
         try:
             time.sleep(a.warmup)
@@ -186,12 +213,7 @@ def main():
         except Exception as e:
             result['error']=str(e)
         finally:
-            if sweep:
-                result['cursor_injections']=len(sweep.events)
-                (run/'cursor-injections.json').write_text(json.dumps(dict(columns=['before_qpc','after_qpc','screen_x','screen_y','sequence'],events=sweep.events,
-                    note='SendInput acceptance timestamps; not game processing or display timestamps'),indent=2),encoding='utf-8')
-                try: sweep.restore()
-                except Exception as e: result['cursor_restore_error']=str(e)
+            save_cursor_capture(sweep,run,result)
             for hwnd in windows(process.pid): u.PostMessageW(hwnd,0x10,0,0) # WM_CLOSE, own child only
             try: process.wait(timeout=15)
             except subprocess.TimeoutExpired:
