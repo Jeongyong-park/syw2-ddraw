@@ -19,7 +19,7 @@ def stats(values):
 
 def summarize(path, start_qpc=None, end_qpc=None):
     groups=defaultdict(list); starts=defaultdict(list); dropped=0; frequency=None
-    gpu_settings=set(); output_settings=set(); footer=False; failures=0
+    gpu_settings=set(); output_settings=set(); footer=False; failures=0; finished=None
     requests=defaultdict(list)
     with Path(path).open(encoding='utf-8',newline='') as f:
         for row in csv.DictReader(f):
@@ -28,6 +28,10 @@ def summarize(path, start_qpc=None, end_qpc=None):
                 raise ValueError('Invalid or inconsistent QPC frequency')
             frequency=hz
             if row['event']=='trace_dropped':
+                if footer: raise ValueError('Duplicate trace footer')
+                stamp=int(row['start_qpc'])
+                if stamp<0 or int(row['end_qpc'])!=stamp: raise ValueError('Invalid trace finish timestamp')
+                finished=stamp or None # Legacy traces have no finish timestamp.
                 dropped+=int(row['a']); footer=True; continue
             a,b=int(row['start_qpc']),int(row['end_qpc'])
             if b<a: raise ValueError('Negative duration')
@@ -60,7 +64,9 @@ def summarize(path, start_qpc=None, end_qpc=None):
             mean_requested_percent=sum(area*100/total for area,total in known)/len(known) if known else None,
             total_requested_pixels=sum(area for area,total in known),
             cpu_duration=stats(groups[name]))
-    return dict(valid=bool(groups) and dropped==0 and footer and failures==0,dropped=dropped,
+    covers_end=None if finished is None or end_qpc is None else finished>=end_qpc
+    return dict(valid=bool(groups) and dropped==0 and footer and failures==0 and covers_end is not False,dropped=dropped,
+        trace_finished_qpc=finished,covers_capture_end=covers_end,
         gpu_present_failures=failures,gpu_settings=sorted(gpu_settings),output_settings=sorted(output_settings),
         durations={k:stats(v) for k,v in sorted(groups.items())},calls=intervals,
         output_requests=request_summary,

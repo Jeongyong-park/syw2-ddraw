@@ -35,6 +35,7 @@ public:
     void finish() {
         std::lock_guard<std::mutex> lock(mutex);
         if(!enabled.exchange(false)) return;
+        const auto finished=now();
         FILE* f=nullptr;
         if(_wfopen_s(&f,path,L"wb")!=0) return;
         fprintf(f,"event,start_qpc,end_qpc,frequency,thread,a,b\n");
@@ -42,7 +43,7 @@ public:
             const auto& e=events[i];
             fprintf(f,"%s,%lld,%lld,%lld,%lu,%ld,%ld\n",e.name,e.start,e.end,frequency,e.thread,e.a,e.b);
         }
-        fprintf(f,"trace_dropped,0,0,%lld,0,%zu,0\n",frequency,dropped);
+        fprintf(f,"trace_dropped,%lld,%lld,%lld,0,%zu,0\n",finished,finished,frequency,dropped);
         fclose(f);
     }
 };

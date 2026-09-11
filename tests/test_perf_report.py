@@ -31,6 +31,16 @@ class PerfReportTests(unittest.TestCase):
         self.assertFalse(self.analyze('')['valid'])
     def test_missing_footer_is_incomplete(self):
         self.assertFalse(self.analyze('gdi_blit,0,1,1000,1,0,0\n')['valid'])
+    def test_early_finish_is_not_a_complete_capture(self):
+        rows='gdi_blit,100,104,1000,1,0,0\n'
+        early=self.analyze(rows+'trace_dropped,150,150,1000,0,0,0\n',start_qpc=100,end_qpc=200)
+        self.assertFalse(early['valid']); self.assertFalse(early['covers_capture_end'])
+        complete=self.analyze(rows+'trace_dropped,201,201,1000,0,0,0\n',start_qpc=100,end_qpc=200)
+        self.assertTrue(complete['valid']); self.assertTrue(complete['covers_capture_end'])
+        legacy=self.analyze(rows+'trace_dropped,0,0,1000,0,0,0\n',start_qpc=100,end_qpc=200)
+        self.assertIsNone(legacy['covers_capture_end'])
+        with self.assertRaisesRegex(ValueError,'Duplicate'):
+            self.analyze(rows+'trace_dropped,201,201,1000,0,0,0\ntrace_dropped,202,202,1000,0,0,0\n')
     def test_request_footprints_use_each_surface_size_and_keep_unknowns(self):
         r=self.analyze('request_blt,1,2,1000,1,25,100\nrequest_blt,2,4,1000,1,400,400\nrequest_blt,4,5,1000,1,0,100\nrequest_flip,5,5,1000,1,0,0\ntrace_dropped,0,0,1000,0,0,0\n')
         blt=r['output_requests']['request_blt']

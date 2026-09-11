@@ -24,6 +24,7 @@ def main():
         subprocess.run([str(exe),str(dll)],env=env,check=True,timeout=30)
         summary=summarize(trace)
         assert summary['valid'],summary
+        assert summary['trace_finished_qpc']>0,summary
         for name in ('gpu_present','gdi_blit','output_attempt','mouse_mapped'):
             assert name in summary['durations'],(name,summary)
         assert summary['displayed_fps'] is None and summary['input_to_photon_ms'] is None
