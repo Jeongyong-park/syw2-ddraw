@@ -122,7 +122,7 @@ public:
     std::map<HWND,Child> children;
     std::unique_ptr<hq::Gpu> gpu;
     bool gpu_enabled=true, gpu_reported=false, presenting=false, vsync=false;
-    int scaling=hq::Nearest;
+    int scaling=hq::SharpBilinear;
     HWND settings=nullptr, previous_focus=nullptr;
     HHOOK settings_hook=nullptr;
     bool gpu_preferred=true;
@@ -136,9 +136,11 @@ public:
         gpu_preferred=gpu_enabled;
         vsync=GetPrivateProfileIntW(L"Display",L"VSync",0,local_path(L"hqcdd.ini").c_str())!=0;
         const bool legacy_linear=GetPrivateProfileIntW(L"Display",L"LinearFilter",0,local_path(L"hqcdd.ini").c_str())!=0;
+        wchar_t legacy_filter[32]{};
+        GetPrivateProfileStringW(L"Display",L"LinearFilter",L"",legacy_filter,32,local_path(L"hqcdd.ini").c_str());
         wchar_t filter[32]{};
         GetPrivateProfileStringW(L"Display",L"Scaling",L"",filter,32,local_path(L"hqcdd.ini").c_str());
-        scaling=hq::parse_scaling(filter,legacy_linear);
+        scaling=hq::parse_scaling(filter,legacy_linear,legacy_filter[0]!=L'\0');
         log("HQCDD " HQCDD_VERSION " created; renderer=%ls",renderer);
     }
     ~Draw();

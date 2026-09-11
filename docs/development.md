@@ -145,12 +145,13 @@ GDI 입력창과의 호환성을 위해 windowed blt-model swap chain을 사용�
 | 키 | 기본 배포값 | 의미 |
 | --- | --- | --- |
 | Fullscreen | 0 | 0=창 모드, 1=전체화면 |
-| Renderer | gdi | gdi=GDI, auto=GPU 시도 후 실패 시 GDI |
-| Scaling | nearest | nearest / bilinear / sharp-bilinear / integer |
+| Renderer | auto | gdi=GDI, auto=GPU 시도 후 실패 시 GDI |
+| Scaling | sharp-bilinear | nearest / bilinear / sharp-bilinear / integer |
 | VSync | 0 | GPU Present 수직동기화 |
 | LinearFilter | 0 | Scaling이 없는 이전 설정의 보간 여부 |
 
-Scaling이 없으면 LinearFilter=1을 Bilinear로 해석합니다. 알 수 없는 Scaling 값은 Nearest입니다.
+Scaling과 LinearFilter가 모두 없으면 Sharp Bilinear를 사용합니다.
+Scaling이 없고 기존 LinearFilter가 있으면 1은 Bilinear, 0은 Nearest로 해석합니다. 알 수 없는 Scaling 값은 Nearest입니다.
 GDI에서는 보간 방식 선택을 유지하더라도 실제 출력은 Nearest입니다.
 Integer는 정수 배율과 공통 viewport를 사용하고 원본보다 작은 창에서는 비율 유지 축소합니다.
 Sharp Bilinear는 정수 픽셀 복제 후 bilinear 보간의 효과를 직접 계산합니다.
@@ -172,7 +173,7 @@ Sharp Bilinear는 정수 픽셀 복제 후 bilinear 보간의 효과를 직접 �
 `docs/images/`에는 실제 배포본에서 캡처한 PNG를 보관합니다.
 이미지는 import를 바꾼 별도 시험본으로 촬영했습니다. DLL 교체 설치의 실게임 검증 결과를 의미하지 않습니다.
 현재 사용자 안내 이미지는 0.6.0 HQNET 로그인·채팅·게임방 로비와 로비에서 연 설정 화면입니다.
-설정 화면은 기본 GDI + Nearest 상태이며 값을 변경하거나 저장하지 않고 닫았습니다.
+당시 설정 화면은 기본 GDI + Nearest 상태이며 값을 변경하거나 저장하지 않고 닫았습니다.
 
 UI가 바뀌면 해당 버전에서 다시 캡처하고 파일명·본문 캡션을 함께 갱신하세요.
 계정·채팅·비밀번호가 보이는 화면을 문서에 넣지 않습니다.

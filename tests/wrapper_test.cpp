@@ -42,6 +42,9 @@ void pixels() {
     auto reduced=hq::Viewport::fit(400,300,800,600,true);
     CHECK(reduced.width==400 && reduced.height==300);
     CHECK(hq::parse_scaling(L"",true)==hq::Bilinear);
+    CHECK(hq::parse_scaling(L"",false)==hq::Nearest); // explicit legacy LinearFilter=0
+    CHECK(hq::parse_scaling(L"",false,false)==hq::SharpBilinear); // no scaling keys
+    CHECK(hq::parse_scaling(L"nearest",false,false)==hq::Nearest); // explicit choice wins
     CHECK(hq::parse_scaling(L"integer",true)==hq::Integer);
     CHECK(hq::parse_scaling(L"bad",true)==hq::Nearest);
     auto tiny=hq::Viewport::fit(0,0,800,600); CHECK(tiny.width>0 && tiny.height>0);
