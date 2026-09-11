@@ -13,6 +13,15 @@ INT_PTR CALLBACK palette_dialog(HWND h,UINT msg,WPARAM w,LPARAM l) {
 }
 void check_palette_ui() {
     hq::Overlay overlay; overlay.syw2x_available=true;
+    overlay.aspect_available=true;
+    overlay.aspect_wide=overlay.aspect_saved_wide=true; // Saved 16:9 can be pending/rejected.
+    CHECK(!overlay.aspect_selection_changed()); // Unrelated temporary setting is allowed.
+    overlay.aspect_wide=false;
+    CHECK(overlay.aspect_selection_changed()); // Clearing the saved request needs persistence.
+    overlay.aspect_saved_wide=false;
+    CHECK(!overlay.aspect_selection_changed()); // Successful save resets the baseline.
+    overlay.aspect_wide=true;
+    CHECK(overlay.aspect_selection_changed());
     CHECK(overlay.palette[0x44]==0x04C804 && overlay.palette[0xFB]==0xBCBCC0);
     CHECK(overlay.palette[0x3D]==0x3C4474 && overlay.palette[0x21]==0xD08820);
     CHECK(overlay.palette[0xDB]==0x880C8C);
@@ -20,10 +29,18 @@ void check_palette_ui() {
     HWND owner=CreateWindowW(L"STATIC",L"palette test",WS_OVERLAPPED,0,0,817,639,nullptr,nullptr,GetModuleHandleW(nullptr),nullptr);
     CHECK(owner);
     HWND panel=CreateDialogParamW(GetModuleHandleW(nullptr),MAKEINTRESOURCEW(IDD_DISPLAY),owner,palette_dialog,reinterpret_cast<LPARAM>(&overlay));
-    CHECK(panel); overlay.init(panel); overlay.syw2x_page=true;
+    CHECK(panel); overlay.aspect_available=true; overlay.init(panel);
+    CHECK(IsWindowEnabled(GetDlgItem(panel,IDC_ASPECT_43)) && IsWindowEnabled(GetDlgItem(panel,IDC_ASPECT_169)));
+    RECT mode{},aspect{},renderer{};
+    GetWindowRect(GetDlgItem(panel,IDC_FULLSCREEN),&mode);
+    GetWindowRect(GetDlgItem(panel,IDC_ASPECT_169),&aspect);
+    GetWindowRect(GetDlgItem(panel,IDC_GDI),&renderer);
+    CHECK(mode.bottom<=aspect.top && aspect.bottom<=renderer.top);
+    overlay.syw2x_page=true;
     SetDlgItemTextW(panel,IDC_SYW2X_FIRST+5,L"0x44");
     SetDlgItemTextW(panel,IDC_SYW2X_FIRST+11,L"0xF4F3F2F1");
     overlay.layout(panel);
+    CHECK(!(GetWindowLongPtrW(GetDlgItem(panel,IDC_ASPECT_169),GWL_STYLE)&WS_VISIBLE));
     auto swatch=GetDlgItem(panel,IDC_SWATCH_FIRST+1);
     CHECK(IsWindowEnabled(swatch));
     HDC dc=CreateCompatibleDC(nullptr); HBITMAP bitmap=CreateBitmap(40,30,1,32,nullptr);
