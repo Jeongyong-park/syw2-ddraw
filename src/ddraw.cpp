@@ -23,6 +23,9 @@
 #include "perf.h"
 #include "osd.h"
 #include "frame_change.h"
+#ifdef HQCDD_ASI
+#include "asi_hook.h"
+#endif
 
 namespace {
 std::recursive_mutex mutex;
@@ -42,7 +45,13 @@ std::wstring local_path(const wchar_t* name) {
     wchar_t path[32768]{};
     GetModuleFileNameW(module, path, 32768);
     std::wstring s(path);
-    return s.substr(0, s.find_last_of(L"\\/") + 1) + name;
+    auto directory=s.substr(0,s.find_last_of(L"\\/"));
+#ifdef HQCDD_ASI
+    const auto last=directory.find_last_of(L"\\/");
+    if(last!=std::wstring::npos && _wcsicmp(directory.c_str()+last+1,L"plugins")==0)
+        directory.resize(last);
+#endif
+    return directory+L"\\"+name;
 }
 void log(const char* format, ...) {
     Guard lock(mutex);
@@ -1354,6 +1363,43 @@ extern "C" HRESULT WINAPI DirectDrawCreate(GUID* guid, IDirectDraw** out, IUnkno
     if(!fn) { if(out) *out=nullptr; return E_FAIL; }
     return fn(guid,out,outer);
 }
+extern "C" BOOL __cdecl HQCDD_IsWrapper() { return TRUE; }
+#ifdef HQCDD_ASI
+extern "C" void __cdecl InitializeASI() {
+    // Ultimate ASI Loader calls this after restoring its startup IAT hooks.
+    // This initialization must run before the game's first DirectDraw creation.
+    static std::once_flag once;
+    std::call_once(once,[] {
+        auto imported=GetModuleHandleW(L"ddraw.dll");
+        if(!imported || GetModuleHandleW(L"ddrawHooked.dll") || GetModuleHandleW(L"hqcdd.dll") ||
+           GetProcAddress(imported,"HQCDD_IsWrapper")) {
+            log("ASI disabled: missing DDRAW or duplicate/chained wrapper"); return;
+        }
+        // Support the tested ASI loader, or system DDRAW for explicit test hosts.
+        wchar_t path[32768]{},system[MAX_PATH]{};
+        GetModuleFileNameW(imported,path,32768); GetSystemDirectoryW(system,MAX_PATH);
+        std::wstring expected=std::wstring(system)+L"\\ddraw.dll";
+        if(!GetProcAddress(imported,"IsUltimateASILoader") && _wcsicmp(path,expected.c_str())!=0) {
+            log("ASI disabled: unrecognized DDRAW provider"); return;
+        }
+        auto slot=hq::draw_import(GetModuleHandleW(nullptr));
+        if(!slot || !*slot) { log("ASI disabled: unsupported main EXE DirectDraw import"); return; }
+        if(*slot!=reinterpret_cast<void*>(GetProcAddress(imported,"DirectDrawCreateEx"))) {
+            log("ASI disabled: DirectDraw import already intercepted"); return;
+        }
+        auto replacement=reinterpret_cast<void*>(&DirectDrawCreateEx);
+        // Keep callbacks valid for the process lifetime; no live unload switch.
+        HMODULE pinned=nullptr;
+        if(!GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS|GET_MODULE_HANDLE_EX_FLAG_PIN,
+            reinterpret_cast<LPCWSTR>(&InitializeASI),&pinned)) { log("ASI disabled: pin failed"); return; }
+        DWORD old=0;
+        if(!VirtualProtect(slot,sizeof(void*),PAGE_READWRITE,&old)) { log("ASI disabled: IAT protection failed"); return; }
+        InterlockedExchangePointer(slot,replacement);
+        DWORD ignored=0; const bool restored=VirtualProtect(slot,sizeof(void*),old,&ignored)!=FALSE;
+        log("ASI active: main EXE DirectDrawCreateEx connected; protection_restored=%d",restored);
+    });
+}
+#endif
 BOOL WINAPI DllMain(HINSTANCE h, DWORD reason, LPVOID) {
     if (reason==DLL_PROCESS_ATTACH) { module=h; DisableThreadLibraryCalls(h); }
     return TRUE;

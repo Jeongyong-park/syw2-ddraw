@@ -12,6 +12,21 @@ spec.loader.exec_module(packager)
 
 
 class PackageTests(unittest.TestCase):
+    def test_asi_package_preserves_loader_and_uses_asi_instructions(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory)
+            for name in packager.USER_FILES: (root/name).write_text('ordinary')
+            (root/'VERSION').write_text('1.2.3')
+            (root/'ASI-INSTALL.txt').write_text('keep existing ASI loader')
+            binary=root/'build/Release/hqcdd.asi'; binary.parent.mkdir(parents=True); binary.write_bytes(b'ASI')
+            target=packager.package(root,asi=True)
+            self.assertEqual(target.name,'syw2-ddraw-v1.2.3-asi.zip')
+            with zipfile.ZipFile(target) as z:
+                self.assertEqual(z.read('plugins/hqcdd.asi'),b'ASI')
+                self.assertNotIn('ddraw.dll',z.namelist())
+                self.assertEqual(z.read('INSTALL.txt'),b'keep existing ASI loader')
+            with self.assertRaises(ValueError): packager.package(root,developer=True,asi=True)
+
     def test_missing_build_does_not_create_output(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

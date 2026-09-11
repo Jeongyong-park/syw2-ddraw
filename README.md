@@ -201,6 +201,9 @@ Windows 10 장비가 없어 해당 OS는 미검증이며, 운영체제별 설치
 
 ## 실시간 성능 오버레이
 
+기존 ESL의 SYW2X 로더와 함께 사용하는 [ASI 실험판](docs/asi-integration.md)도 빌드할 수 있습니다.
+일반 DLL판과 설치 방식이 다르므로 `ASI-INSTALL.txt`를 먼저 확인하세요.
+
 **Ctrl+Alt+F**로 FPS, 프레임 간격 그래프, 출력 처리 시간, CPU·RAM을 표시합니다. **Ctrl+Alt+B**로 전장 플레이 구간의 벤치마크를 시작·종료합니다. 기본은 꺼짐이며, [표시 지표와 사용법](docs/performance-osd.md)을 참고하세요.
 
 [37창병 세이브 기반 성능 검증](docs/battle-37-benchmark.md)에 재현 상태와 실제 측정 결과를 정리했습니다. 대기 병력이 있는 전장의 커서 측정과 집단 이동·교전 검증을 구분합니다.

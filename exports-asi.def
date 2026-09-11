@@ -1,5 +1,6 @@
-LIBRARY hqcdd
+LIBRARY "hqcdd.asi"
 EXPORTS
+    InitializeASI
     HQCDD_IsWrapper
     DirectDrawCreate=_DirectDrawCreate@12
     DirectDrawCreateEx=_DirectDrawCreateEx@16

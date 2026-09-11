@@ -27,8 +27,8 @@ jobs:
         run: cmake -S . -B build -A Win32
       - name: Build wrapper and native tests
         run: cmake --build build --config Release
-      - name: Test OSD statistics and frame change detection
-        run: ctest --test-dir build -C Release -R "osd_stats_test|frame_change_test" --output-on-failure
+      - name: Test OSD statistics, frame change detection and ASI imports
+        run: ctest --test-dir build -C Release -R "osd_stats_test|frame_change_test|asi_import_test|asi_duplicate_test|asi_intercepted_test" --output-on-failure
       - name: Test production coordinate transform in Unicorn
         run: python tests/unicorn_viewport.py --report output/unicorn-viewport.json
       - name: Verify DLL version and author
@@ -41,6 +41,8 @@ jobs:
         run: python package.py
       - name: Build developer archive
         run: python package.py --developer
+      - name: Build experimental ASI archive
+        run: python package.py --asi
       - name: Verify extracted distribution and adjacent DLL import
         run: ./tests/test_distribution.ps1
       - name: Validate release assets and tag (no publishing)

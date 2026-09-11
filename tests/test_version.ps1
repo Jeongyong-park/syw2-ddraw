@@ -9,7 +9,7 @@ $fields = @{
     ProductVersion = $expected
     ProductName = 'HQCDD for SYW2Plus'
     InternalName = 'hqcdd'
-    OriginalFilename = 'hqcdd.dll'
+    OriginalFilename = $(if ([IO.Path]::GetExtension($DllPath) -ieq '.asi') { 'hqcdd.asi' } else { 'hqcdd.dll' })
     LegalCopyright = 'Copyright (c) 2026 Park Jeongyong. MIT License.'
 }
 foreach ($field in $fields.Keys) {

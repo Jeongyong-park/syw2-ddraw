@@ -21,7 +21,11 @@ BEGIN
    VALUE "FileVersion", "@PROJECT_VERSION@\0"
    VALUE "InternalName", "hqcdd\0"
    VALUE "LegalCopyright", "Copyright (c) 2026 Park Jeongyong. MIT License.\0"
+#ifdef HQCDD_ASI
+   VALUE "OriginalFilename", "hqcdd.asi\0"
+#else
    VALUE "OriginalFilename", "hqcdd.dll\0"
+#endif
    VALUE "ProductName", "HQCDD for SYW2Plus\0"
    VALUE "ProductVersion", "@PROJECT_VERSION@\0"
   END
