@@ -48,3 +48,6 @@ target_compile_options(unicorn_probe PRIVATE /W4 /utf-8 /EHsc)
 
 add_executable(osd_stats_test tests/osd_stats_test.cpp)
 add_test(NAME osd_stats_test COMMAND osd_stats_test)
+add_executable(frame_change_test tests/frame_change_test.cpp src/pixels.cpp)
+target_include_directories(frame_change_test PRIVATE src)
+add_test(NAME frame_change_test COMMAND frame_change_test)

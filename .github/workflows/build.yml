@@ -27,8 +27,8 @@ jobs:
         run: cmake -S . -B build -A Win32
       - name: Build wrapper and native tests
         run: cmake --build build --config Release
-      - name: Test live OSD statistics
-        run: ctest --test-dir build -C Release -R osd_stats_test --output-on-failure
+      - name: Test OSD statistics and frame change detection
+        run: ctest --test-dir build -C Release -R "osd_stats_test|frame_change_test" --output-on-failure
       - name: Test production coordinate transform in Unicorn
         run: python tests/unicorn_viewport.py --report output/unicorn-viewport.json
       - name: Verify DLL version and author

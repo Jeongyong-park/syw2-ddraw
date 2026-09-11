@@ -1,5 +1,6 @@
 #include "osd.h"
 #include "osd_stats.h"
+#include "perf.h"
 #include <psapi.h>
 #include <atomic>
 #include <mutex>
@@ -48,9 +49,11 @@ struct PerformanceOsd::Impl {
         SetTimer(window,1,250,nullptr); return true;
     }
     void refresh() {
+        perf::Scope timing("osd_refresh");
         if(!window) return;
         DWORD foreground=0,own=0; GetWindowThreadProcessId(GetForegroundWindow(),&foreground); GetWindowThreadProcessId(owner,&own);
-        const bool visible=active && !blocked && IsWindowVisible(owner) && !IsIconic(owner) && foreground==own;
+        const bool visible=active && !blocked && IsWindowVisible(owner) && IsWindowEnabled(owner) &&
+            !IsIconic(owner) && foreground==own && GetAncestor(GetForegroundWindow(),GA_ROOT)==owner;
         collecting=visible;
         if(!visible) {
             if(was_foreground) { std::lock_guard<std::mutex> lock(mutex); stats.stop(PerformanceOsd::now()); stats.reset(); }
@@ -76,6 +79,7 @@ struct PerformanceOsd::Impl {
         InvalidateRect(window,nullptr,FALSE);
     }
     void paint(HDC target) {
+        perf::Scope timing("osd_paint");
         RECT r{}; GetClientRect(window,&r);
         auto dc=CreateCompatibleDC(target); auto bitmap=CreateCompatibleBitmap(target,std::max(1L,r.right),std::max(1L,r.bottom));
         auto previous=SelectObject(dc,bitmap); auto background=CreateSolidBrush(RGB(12,17,22)); FillRect(dc,&r,background); DeleteObject(background);

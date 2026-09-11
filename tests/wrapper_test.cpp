@@ -346,6 +346,13 @@ int wmain(int argc, wchar_t** argv) {
         (WS_EX_LAYERED|WS_EX_TRANSPARENT|WS_EX_NOACTIVATE|WS_EX_TOOLWINDOW));
     CHECK(SendMessageW(osd,WM_NCHITTEST,0,0)==HTTRANSPARENT);
     CHECK(SendMessageW(osd,WM_MOUSEACTIVATE,0,0)==MA_NOACTIVATE);
+    // Native modal dialogs disable their owner without deactivating the process.
+    EnableWindow(window,FALSE);
+    SendMessageW(osd,WM_TIMER,1,0);
+    CHECK(!IsWindowVisible(osd));
+    EnableWindow(window,TRUE);
+    SetForegroundWindow(window);
+    SendMessageW(osd,WM_TIMER,1,0);
     SendMessageW(window,WM_SYSCOMMAND,0x1e50,0);
     SendMessageW(window,WM_SYSCOMMAND,0x1e50,0);
     SendMessageW(window,WM_SYSCOMMAND,0x1e40,0);

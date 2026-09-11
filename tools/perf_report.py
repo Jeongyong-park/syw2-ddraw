@@ -17,10 +17,37 @@ def stats(values):
                 p95_ms=percentile(.95), p99_ms=percentile(.99), max_ms=values[-1])
 
 
+def region_summary(events, frequency):
+    previous=None; last_change=None; unchanged=0.0; longest=0.0
+    gaps=[]; fractions=[]; changed_count=0; unavailable=0; baselines=0
+    for t,name,changed,total in sorted(events):
+        if name!='frame_region_change':
+            previous=last_change=None; unchanged=0.0
+            unavailable+=name=='frame_region_unavailable'
+            baselines+=name=='frame_region_baseline'
+            continue
+        if total<=0 or changed<0 or changed>total:
+            raise ValueError('Invalid region change count')
+        fractions.append(changed*100/total)
+        if changed:
+            changed_count+=1
+            if last_change is not None: gaps.append((t-last_change)*1000/frequency)
+            last_change=t; unchanged=0.0
+        elif previous is not None:
+            unchanged+=(t-previous)*1000/frequency; longest=max(longest,unchanged)
+        previous=t
+    return dict(available=bool(fractions),compared_samples=len(fractions),changed_samples=changed_count,
+        unchanged_samples=len(fractions)-changed_count,unavailable_samples=unavailable,baselines=baselines,
+        max_observed_unchanged_span_ms=longest if fractions else None,change_interval_ms=stats(gaps),
+        mean_changed_sample_percent=sum(fractions)/len(fractions) if fractions else None,
+        max_changed_sample_percent=max(fractions) if fractions else None,
+        note='Source RGB on a two-pixel grid before output; not displayed frames, unit motion or simulation ticks. Gaps reset at unavailable/baseline records. Static terrain and camera/palette changes affect this metric.')
+
+
 def summarize(path, start_qpc=None, end_qpc=None):
     groups=defaultdict(list); starts=defaultdict(list); dropped=0; frequency=None
     gpu_settings=set(); output_settings=set(); footer=False; failures=0; finished=None
-    requests=defaultdict(list)
+    requests=defaultdict(list); region=[]
     with Path(path).open(encoding='utf-8',newline='') as f:
         for row in csv.DictReader(f):
             hz=int(row['frequency'])
@@ -39,6 +66,8 @@ def summarize(path, start_qpc=None, end_qpc=None):
             if end_qpc is not None and b>end_qpc: continue
             groups[row['event']].append((b-a)*1000/hz)
             starts[row['event']].append(a)
+            if row['event'] in ('frame_region_change','frame_region_baseline','frame_region_unavailable'):
+                region.append((a,row['event'],int(row['a']),int(row['b'])))
             if row['event']=='gpu_output': gpu_settings.add((int(row['a']),int(row['b'])))
             if row['event']=='output_attempt': output_settings.add((int(row['a']),int(row['b'])))
             if row['event']=='gpu_present_result' and int(row['a'])<0: failures+=1
@@ -70,6 +99,7 @@ def summarize(path, start_qpc=None, end_qpc=None):
         gpu_present_failures=failures,gpu_settings=sorted(gpu_settings),output_settings=sorted(output_settings),
         durations={k:stats(v) for k,v in sorted(groups.items())},calls=intervals,
         output_requests=request_summary,
+        frame_region=region_summary(region,frequency),
         request_note='Primary output request footprints, including skipped attempts; not changed pixels, upload bytes, or cursor identification. CPU durations overlap output_attempt.',
         displayed_fps=None, input_to_photon_ms=None,
         note='CPU API timings and call intervals only; no frame/input association. Dropped traces are invalid.')

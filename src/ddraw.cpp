@@ -22,6 +22,7 @@
 #include "overlay.h"
 #include "perf.h"
 #include "osd.h"
+#include "frame_change.h"
 
 namespace {
 std::recursive_mutex mutex;
@@ -132,7 +133,19 @@ public:
     hq::PerformanceOsd osd;
     bool initial_osd=false;
     bool opening_settings=false;
+    hq::FrameChange frame_change;
+    hq::Rect probe_region{};
+    bool probe_enabled=false;
+    double probe_resume=0;
     Draw() {
+        wchar_t region[128]{}; int x=0,y=0,w=0,h=0; wchar_t trailing=0;
+        const auto region_length=GetEnvironmentVariableW(L"HQCDD_PERF_REGION",region,128);
+        if(region_length && region_length<128 && swscanf_s(region,L"%d,%d,%d,%d%c",&x,&y,&w,&h,&trailing,1u)==4 &&
+           x>=0 && y>=0 && x<=8192 && y<=8192 && w>0 && h>0 && w<=800 && h<=600) {
+            probe_region={x,y,x+w,y+h}; probe_enabled=true;
+            log("frame probe requested: region=%d,%d,%d,%d stride=2 cursor_margin=64 settle_ms=250",x,y,w,h);
+        }
+        else if(region_length) log("frame probe disabled: invalid HQCDD_PERF_REGION");
         initial_osd=GetPrivateProfileIntW(L"Diagnostics",L"OSD",0,local_path(L"hqcdd.ini").c_str())!=0;
         windowed=GetPrivateProfileIntW(L"Display",L"Fullscreen",0,local_path(L"hqcdd.ini").c_str())==0;
         wchar_t renderer[32]{};
@@ -453,6 +466,11 @@ LRESULT CALLBACK window_proc(HWND h, UINT msg, WPARAM w, LPARAM l, UINT_PTR, DWO
         d->sync_children(); d->update_clip(); d->present(); return 0;
     }
     if (msg==WM_ACTIVATEAPP) {
+        hq::perf::mark("app_activation",w?1:0);
+        if(d->probe_enabled) {
+            d->frame_change.reset(); d->probe_resume=hq::PerformanceOsd::now()+250;
+            hq::perf::mark("frame_region_unavailable",2);
+        }
         d->osd.suspend(!w || d->settings!=nullptr);
         if (!w && d->clip_owned) { ClipCursor(nullptr); d->clip_owned=false; }
         if (w) { d->update_clip(); InvalidateRect(h,nullptr,FALSE); }
@@ -480,6 +498,9 @@ LRESULT CALLBACK window_proc(HWND h, UINT msg, WPARAM w, LPARAM l, UINT_PTR, DWO
         hq::perf::mark("mouse_mapped",x,y);
         return DefSubclassProc(h,msg,w,l);
     }
+    // The game's timer callback runs after our handling. Keep it separate from
+    // rendering/OSD work; callback duration does not measure simulation ticks.
+    hq::perf::Scope callback(msg==WM_TIMER?"game_timer_dispatch":nullptr,static_cast<long>(w));
     return DefSubclassProc(h,msg,w,l);
 }
 
@@ -903,6 +924,27 @@ void Draw::present(const char* reason, const hq::Rect* dirty) {
         { hq::perf::Scope stage("child_layout"); sync_children(); }
         hq::Palette pal{};
         if (primary->palette) pal=primary->palette->colors();
+        if(probe_enabled && hq::perf::recorder().enabled) {
+            hq::perf::Scope stage("frame_probe_cpu");
+            const double t=hq::PerformanceOsd::now();
+            POINT cursor{}; DWORD foreground=0;
+            GetWindowThreadProcessId(GetForegroundWindow(),&foreground);
+            bool blocked=settings || !IsWindowEnabled(window) || foreground!=GetCurrentProcessId() ||
+                GetAncestor(GetForegroundWindow(),GA_ROOT)!=window || !original_cursor(&cursor) || !ScreenToClient(window,&cursor);
+            const auto v=viewport();
+            const int cx=v.game_x(cursor.x),cy=v.game_y(cursor.y);
+            // Conservatively reject the entire ROI near the cursor, then settle.
+            blocked=blocked || (cx>=probe_region.left-64 && cx<probe_region.right+64 &&
+                cy>=probe_region.top-64 && cy<probe_region.bottom+64);
+            if(blocked) probe_resume=t+250;
+            if(blocked || t<probe_resume) {
+                frame_change.reset(); hq::perf::mark("frame_region_unavailable",1);
+            } else {
+                const auto result=frame_change.sample(*primary->image,pal,probe_region);
+                hq::perf::mark(result.baseline?"frame_region_baseline":result.compared?"frame_region_change":"frame_region_unavailable",
+                    result.changed,result.compared);
+            }
+        }
         if (gpu_enabled) {
             if (!gpu) gpu=std::make_unique<hq::Gpu>();
             HRESULT hr=gpu->present(window,*primary->image,pal,viewport(),vsync,scaling);

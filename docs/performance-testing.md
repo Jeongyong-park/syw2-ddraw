@@ -9,6 +9,7 @@
 - 비교 실행기: 별도 게임 복사본에서 렌더러/필터/VSync/창·전체화면 조합을 반복하고 조건별 JSON 생성.
 - 분석기: p50/p95/p99·최대 시간, 출력 API 호출 간격과 호출률. 표시 FPS와 입력→화면 지연은 null.
 - 실시간 OSD: Ctrl+Alt+F로 표시, Ctrl+Alt+B로 벤치마크. [지표와 사용법](performance-osd.md).
+- 선택적 전장 영역 비교: `HQCDD_PERF_REGION=x,y,width,height`와 내부 CSV 계측을 함께 활성화하면 원본 RGB 변화와 반복 구간을 기록한다. [설정과 한계](frame-change-diagnostics.md).
 
 Unicorn의 DPI 시나리오는 주어진 크기의 산술 검증이며 Windows DPI API를 에뮬레이션하지 않는다.
 가상 시간에 따른 EXE 내부 게임 틱·커서 그리기 검증은 아직 추가하지 않았다.
