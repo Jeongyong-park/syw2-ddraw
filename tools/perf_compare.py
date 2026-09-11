@@ -12,7 +12,7 @@ def compare(root):
     for path in sorted(root.glob('run-*/result.json')):
         run=json.loads(path.read_text(encoding='utf-8')); completed+=1
         if not run.get('valid'):
-            reasons=[k for k in ('error','foreground_lost','forced_exit','settings_mismatch','geometry_changed','runtime_settings_changed') if run.get(k)]
+            reasons=[k for k in ('error','foreground_lost','forced_exit','settings_mismatch','backend_mismatch','geometry_changed','runtime_settings_changed') if run.get(k)]
             if run.get('trace_enabled',True) and not run.get('summary',{}).get('valid'): reasons.append('invalid_or_missing_trace')
             if run.get('presentmon_exit',0)!=0: reasons.append('presentmon_failed')
             if run.get('presentmon_error'): reasons.append('presentmon_schema_error')

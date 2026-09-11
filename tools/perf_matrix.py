@@ -38,6 +38,11 @@ def plan(repeats):
 def digest(p): return hashlib.sha256(p.read_bytes()).hexdigest()
 
 
+def backend_mismatch(renderer, run_log):
+    if run_log is None: return True
+    return renderer=='auto' and ('D3D11 hardware presentation active' not in run_log or 'switching to GDI' in run_log)
+
+
 def tool_hashes():
     root=Path(__file__).resolve().parent
     return {name:digest(root/name) for name in ('perf_matrix.py','perf_report.py','perf_compare.py',
@@ -239,13 +244,14 @@ def main():
                 except subprocess.TimeoutExpired:
                     monitor.terminate(); monitor.wait(); result['presentmon_exit']='timeout'
             if monitor_log: monitor_log.close()
+        run_log=None
         if log_path.exists():
             with log_path.open('rb') as log: log.seek(log_start); run_log=log.read().decode('utf-8',errors='replace')
             (run/'hqcdd.log').write_text(run_log,encoding='utf-8')
             if not job['trace_enabled']:
                 result['settings_mismatch']='Display settings applied:' in run_log or 'switching to GDI' in run_log
-                if job['renderer']=='auto': result['settings_mismatch'] |= 'D3D11 hardware presentation active' not in run_log
         elif not job['trace_enabled']: result['settings_mismatch']=True
+        result['backend_mismatch']=backend_mismatch(job['renderer'],run_log)
         if trace.exists() and 'start_qpc' in result:
             try:
                 result['summary']=summarize(trace,result['start_qpc'],result['end_qpc'])
@@ -260,7 +266,7 @@ def main():
             if expected_gpu:
                 result['settings_mismatch'] |= summary['gpu_settings']!=[(job['vsync'],expected_scaling)]
         result['valid']=(bool(result.get('summary',{}).get('valid')) if job['trace_enabled'] else True) and not any(result.get(x) for x in ('error','foreground_lost','forced_exit','geometry_changed','runtime_settings_changed'))
-        result['valid'] &= not result.get('settings_mismatch',False)
+        result['valid'] &= not result.get('settings_mismatch',False) and not result['backend_mismatch']
         if monitor: result['valid'] &= result.get('presentmon_exit')==0 and (run/'presentmon.csv').exists()
         if monitor and result.get('presentmon_exit')==0 and (run/'presentmon.csv').exists():
             try:

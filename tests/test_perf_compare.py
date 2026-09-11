@@ -8,6 +8,15 @@ spec=importlib.util.spec_from_file_location('perf_compare',Path(__file__).resolv
 report=importlib.util.module_from_spec(spec); spec.loader.exec_module(report)
 
 class CompareTests(unittest.TestCase):
+    def test_backend_fallback_is_reported_even_when_trace_is_valid(self):
+        with tempfile.TemporaryDirectory() as d:
+            root=Path(d); (root/'manifest.json').write_text('{"jobs":[{}]}')
+            run=root/'run-00'; run.mkdir()
+            (run/'result.json').write_text(json.dumps(dict(valid=False,trace_enabled=True,
+                backend_mismatch=True,summary={'valid':True})))
+            result=report.compare(root)
+            self.assertEqual(result['valid_runs'],0)
+            self.assertEqual(result['invalid_runs'][0]['reasons'],['backend_mismatch'])
     def test_invalid_runs_are_excluded_and_repeats_not_pooled(self):
         with tempfile.TemporaryDirectory() as d:
             root=Path(d); (root/'manifest.json').write_text(json.dumps({'jobs':[{}, {}, {}, {}]}))

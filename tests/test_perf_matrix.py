@@ -6,11 +6,17 @@ import tempfile
 import unittest
 from unittest.mock import Mock, patch
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'tools'))
-from perf_matrix import select_jobs, save_cursor_capture, wait_for_scene
+from perf_matrix import select_jobs, save_cursor_capture, wait_for_scene, backend_mismatch
 
 RUNNER=Path(__file__).resolve().parents[1]/'tools/perf_matrix.py'
 
 class PerfMatrixTests(unittest.TestCase):
+    def test_gpu_backend_requires_hardware_and_rejects_fallback(self):
+        self.assertFalse(backend_mismatch('auto','D3D11 hardware presentation active'))
+        self.assertTrue(backend_mismatch('auto','GPU output failed; switching to GDI'))
+        self.assertTrue(backend_mismatch('auto','D3D11 hardware presentation active\nresize failed; switching to GDI'))
+        self.assertTrue(backend_mismatch('auto',None))
+        self.assertFalse(backend_mismatch('gdi','HQCDD created; renderer=gdi'))
     def test_scene_gate_requires_positive_verification(self):
         with tempfile.TemporaryDirectory() as d:
             root=Path(d); process=Mock(pid=42)
