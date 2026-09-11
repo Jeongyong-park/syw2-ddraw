@@ -12,6 +12,7 @@
 #define CHECK(x) do { if (!(x)) { std::fprintf(stderr,"FAIL line %d: %s\n",__LINE__,#x); std::exit(1); } } while (0)
 #define OK(x) CHECK((x)==DD_OK)
 int production_keys=0;
+LPARAM last_mouse=0;
 void check_covered(HWND child) {
     // The full-client settings overlay must clip even direct GDI writes to EDITs.
     CHECK(IsWindowVisible(child));
@@ -23,6 +24,7 @@ void check_covered(HWND child) {
     CHECK(region==NULLREGION);
 }
 LRESULT CALLBACK game_proc(HWND h,UINT msg,WPARAM w,LPARAM l) {
+    if(msg==WM_MOUSEMOVE) { last_mouse=l; return 0; }
     if(w==VK_F10 && (msg==WM_KEYDOWN || msg==WM_KEYUP || msg==WM_SYSKEYDOWN || msg==WM_SYSKEYUP)) { ++production_keys; return 0; }
     return DefWindowProcW(h,msg,w,l);
 }
@@ -84,6 +86,10 @@ int wmain(int argc, wchar_t** argv) {
     CHECK(window);
     OK(d->SetCooperativeLevel(window,DDSCL_EXCLUSIVE|DDSCL_FULLSCREEN));
     OK(d->SetDisplayMode(64,48,8,0,0));
+    SendMessageW(window,WM_MOUSEMOVE,0,MAKELPARAM(-1,-1));
+    CHECK(last_mouse==MAKELPARAM(0,0));
+    SendMessageW(window,WM_MOUSEMOVE,0,MAKELPARAM(16000,16000));
+    CHECK(last_mouse==MAKELPARAM(63,47));
     ShowWindow(window,SW_HIDE);
     DDSURFACEDESC2 mode{}; mode.dwSize=sizeof(mode); OK(d->GetDisplayMode(&mode)); CHECK(mode.dwWidth==64 && mode.ddpfPixelFormat.dwRGBBitCount==8);
     DDSURFACEDESC2 desc{}; desc.dwSize=sizeof(desc); desc.dwFlags=DDSD_CAPS|DDSD_BACKBUFFERCOUNT;
@@ -102,6 +108,15 @@ int wmain(int argc, wchar_t** argv) {
     CHECK(front->Flip(nullptr,DDFLIP_WAIT)==DDERR_SURFACEBUSY);
     OK(back->Unlock(nullptr)); CHECK(back->Unlock(nullptr)==DDERR_NOTLOCKED);
     OK(front->Flip(nullptr,DDFLIP_WAIT));
+    // Partial writable unlock requests its locked area; readonly unlock requests no output.
+    RECT diagnostic_area{8,8,12,11}; locked={}; locked.dwSize=sizeof(locked);
+    OK(front->Lock(&diagnostic_area,&locked,DDLOCK_WAIT,nullptr)); OK(front->Unlock(nullptr));
+    locked={}; locked.dwSize=sizeof(locked);
+    OK(front->Lock(&diagnostic_area,&locked,DDLOCK_WAIT|DDLOCK_READONLY,nullptr)); OK(front->Unlock(nullptr));
+    RECT diagnostic_source{0,0,2,2};
+    OK(front->BltFast(20,20,back,&diagnostic_source,DDBLTFAST_WAIT));
+    RECT diagnostic_clip{63,47,70,60}; DDBLTFX diagnostic_fill{}; diagnostic_fill.dwSize=sizeof(diagnostic_fill);
+    OK(front->Blt(&diagnostic_clip,nullptr,nullptr,DDBLT_COLORFILL,&diagnostic_fill));
     OK(front->Lock(nullptr,&locked,DDLOCK_READONLY,nullptr)); CHECK(static_cast<unsigned char*>(locked.lpSurface)[0]==1); OK(front->Unlock(nullptr));
     PALETTEENTRY change{0,0,255,0}; OK(pal->SetEntries(0,1,1,&change));
     PALETTEENTRY got{}; OK(pal->GetEntries(0,1,1,&got)); CHECK(got.peBlue==255);

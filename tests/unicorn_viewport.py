@@ -4,11 +4,12 @@ from fractions import Fraction
 from pathlib import Path
 import random
 import struct
+import json
 from unicorn import Uc, UC_ARCH_X86, UC_MODE_32
 from unicorn.x86_const import UC_X86_REG_ESP, UC_X86_REG_EIP
 
 
-def run(path):
+def run(path, report=None):
     data = path.read_bytes()
     u16 = lambda p: struct.unpack_from("<H", data, p)[0]
     u32 = lambda p: struct.unpack_from("<I", data, p)[0]
@@ -54,7 +55,17 @@ def run(path):
               for _ in range(1000)]
     def trunc(a,b):
         return (abs(a)//b)*(-1 if a<0 else 1)
-    for case in cases:
+    scenarios = [(case, [rng.randint(-8192,16384) for _ in range(4)], 'random') for case in cases]
+    # Physical client dimensions representing 100/125/150/200% scaling.
+    # Windows DPI API virtualization is deliberately outside this CPU-only test.
+    for dpi in (96,120,144,192):
+        for cw,ch in ((800*dpi//96,600*dpi//96),(3840,2160),(640,480)):
+            for integer in (0,1):
+                for step in list(range(-20,cw+21,37))+list(range(cw+20,-21,-37))+[cw//2]*8:
+                    scenarios.append(((cw,ch,800,600,integer),(400,300,step,ch//2),f'move-stop-reverse-{dpi}-{integer}'))
+                for cx,cy in ((0,0),(cw-1,0),(0,ch-1),(cw-1,ch-1),(-1,-1),(cw,ch)):
+                    scenarios.append(((cw,ch,800,600,integer),(0,0,cx,cy),'boundary-click'))
+    for case,coords,label in scenarios:
         cw,ch,gw,gh,integer = case
         cw,ch,gw,gh = [max(1,n) for n in (cw,ch,gw,gh)]
         scale = min(Fraction(cw,gw),Fraction(ch,gh))
@@ -62,24 +73,39 @@ def run(path):
             scale = Fraction(int(scale))
         w,h = max(1,int(gw*scale)),max(1,int(gh*scale))
         x,y = (cw-w)//2,(ch-h)//2
-        lx,ly,cx,cy = [rng.randint(-8192,16384) for _ in range(4)]
+        lx,ly,cx,cy = coords
         expected = (x,y,w,h,x+trunc(lx*w,gw),y+trunc(ly*h,gh),
                     trunc((cx-x)*gw,w),trunc((cy-y)*gh,h))
+        expected += (min(gw-1,max(0,expected[6])),min(gh-1,max(0,expected[7])))
         cpu.mem_write(inputs,struct.pack("<9i",*case,lx,ly,cx,cy))
-        cpu.mem_write(outputs,b"\xcc"*32)
+        cpu.mem_write(outputs,b"\xcc"*40)
         cpu.mem_write(stack,struct.pack("<III",stop,inputs,outputs))
         cpu.reg_write(UC_X86_REG_ESP,stack)
         cpu.emu_start(entry,stop,timeout=1000000,count=100000)
         if cpu.reg_read(UC_X86_REG_EIP)!=stop:
             raise AssertionError("Probe did not return within instruction/time limit")
-        actual = struct.unpack("<8i",cpu.mem_read(outputs,32))
+        actual = struct.unpack("<10i",cpu.mem_read(outputs,40))
         if actual!=expected:
-            raise AssertionError((case,actual,expected))
-    print(f"PASS: Unicorn x86 production viewport: {len(cases)} cases")
+            raise AssertionError(dict(seed=600,scenario=label,case=case,coords=coords,actual=actual,expected=expected))
+    if report:
+        report.parent.mkdir(parents=True,exist_ok=True)
+        report.write_text(json.dumps(dict(seed=600,cases=len(scenarios),status='passed',
+            scope='CPU coordinate logic; no FPS, DPI API, Windows or display latency measurement'),indent=2),encoding='utf-8')
+    print(f"PASS: Unicorn x86 production viewport: {len(scenarios)} cases")
     print("Scope: CPU coordinate math only; not Windows/GDI/IME/GPU compatibility.")
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("dll",type=Path,nargs="?",default=Path("build/Release/unicorn_probe.dll"))
-    run(parser.parse_args().dll)
+    parser.add_argument('--report',type=Path)
+    args=parser.parse_args()
+    try:
+        run(args.dll,args.report)
+    except Exception as error:
+        if args.report:
+            args.report.parent.mkdir(parents=True,exist_ok=True)
+            detail=error.args[0] if error.args and isinstance(error.args[0],dict) else str(error)
+            args.report.write_text(json.dumps(dict(seed=600,status='failed',
+                error_type=type(error).__name__,detail=detail),indent=2),encoding='utf-8')
+        raise

@@ -24,5 +24,7 @@ struct Viewport {
     int map_y(int logical) const { return y+int(int64_t(logical)*height/game_height); }
     int unmap_x(int client) const { return int((int64_t(client)-x)*game_width/width); }
     int unmap_y(int client) const { return int((int64_t(client)-y)*game_height/height); }
+    int game_x(int client) const { return std::clamp(unmap_x(client),0,game_width-1); }
+    int game_y(int client) const { return std::clamp(unmap_y(client),0,game_height-1); }
 };
 }

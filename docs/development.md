@@ -140,6 +140,8 @@ GDI 입력창과의 호환성을 위해 windowed blt-model swap chain을 사용�
 
 ## INI 호환성
 
+성능 지표와 자동 진단 도구는 [성능 검사](performance-testing.md)를 참고하세요.
+
 설정 파일은 로드된 DLL 옆 `hqcdd.ini`의 `[Display]` 섹션입니다. DLL을 ddraw.dll로 바꿔도 설정·로그 파일명은 바뀌지 않습니다.
 
 | 키 | 기본 배포값 | 의미 |
