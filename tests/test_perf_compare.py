@@ -28,6 +28,21 @@ class CompareTests(unittest.TestCase):
             r=report.compare(root)
             self.assertEqual(r['conditions'],[]); self.assertTrue(r['incomplete'])
             self.assertIn('Completed 0/1',report.render(r))
+    def test_delivery_uses_per_run_percentiles_and_only_available_samples(self):
+        with tempfile.TemporaryDirectory() as d:
+            root=Path(d); (root/'manifest.json').write_text('{"jobs":[{},{},{}]}')
+            for i,value in enumerate((2,8,None)):
+                run=root/f'run-{i:02d}'; run.mkdir()
+                delivery={'available':value is not None}
+                if value is not None:
+                    delivery.update(delivery_lower_bound_ms={'p95_ms':value},delivery_upper_bound_ms={'p95_ms':value+1})
+                (run/'result.json').write_text(json.dumps(dict(valid=True,renderer='auto',scaling='nearest',
+                    vsync=0,fullscreen=0,cursor_sweep=True,input_delivery=delivery)))
+            r=report.compare(root); row=r['conditions'][0]
+            self.assertEqual(row['input_delivery_runs'],2)
+            self.assertEqual(row['median_run_p95_delivery_lower_bound_ms'],5)
+            self.assertEqual(row['median_run_p95_delivery_upper_bound_ms'],6)
+            self.assertIn('Not photon latency',report.render(r))
     def test_cursor_sweep_is_not_pooled_or_paired_with_unscripted_runs(self):
         with tempfile.TemporaryDirectory() as d:
             root=Path(d); (root/'manifest.json').write_text('{"jobs":[{},{},{}]}')

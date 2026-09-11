@@ -19,6 +19,7 @@ from perf_report import summarize
 from perf_compare import compare, render
 from presentmon_report import summarize_presentmon
 from perf_cursor import CursorSweep
+from perf_input_report import summarize_input
 
 MODES=[('gdi','nearest',0),('auto','nearest',0),('auto','bilinear',0),
        ('auto','sharp-bilinear',0),('auto','sharp-bilinear',1)]
@@ -187,7 +188,7 @@ def main():
         finally:
             if sweep:
                 result['cursor_injections']=len(sweep.events)
-                (run/'cursor-injections.json').write_text(json.dumps(dict(columns=['before_qpc','after_qpc','screen_x','screen_y'],events=sweep.events,
+                (run/'cursor-injections.json').write_text(json.dumps(dict(columns=['before_qpc','after_qpc','screen_x','screen_y','sequence'],events=sweep.events,
                     note='SendInput acceptance timestamps; not game processing or display timestamps'),indent=2),encoding='utf-8')
                 try: sweep.restore()
                 except Exception as e: result['cursor_restore_error']=str(e)
@@ -208,7 +209,10 @@ def main():
                 if job['renderer']=='auto': result['settings_mismatch'] |= 'D3D11 hardware presentation active' not in run_log
         elif not job['trace_enabled']: result['settings_mismatch']=True
         if trace.exists() and 'start_qpc' in result:
-            try: result['summary']=summarize(trace,result['start_qpc'],result['end_qpc'])
+            try:
+                result['summary']=summarize(trace,result['start_qpc'],result['end_qpc'])
+                if sweep:
+                    result['input_delivery']=summarize_input(trace,run/'cursor-injections.json',result['start_qpc'],result['end_qpc'])
             except (ValueError,KeyError,OSError) as e: result['error']=f'Trace analysis failed: {e}'
         if result.get('summary'):
             summary=result['summary']

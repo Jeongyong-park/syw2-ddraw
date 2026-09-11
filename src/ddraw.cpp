@@ -391,6 +391,11 @@ public:
 };
 
 LRESULT CALLBACK window_proc(HWND h, UINT msg, WPARAM w, LPARAM l, UINT_PTR, DWORD_PTR data) {
+    if (msg==WM_MOUSEMOVE && hq::perf::recorder().enabled && !InSendMessage()) {
+        const auto tag=static_cast<DWORD>(GetMessageExtraInfo());
+        if ((tag & 0xffff0000u)==0x48510000u && (tag & 0xffffu))
+            hq::perf::mark("mouse_injected_entry",static_cast<long>(tag & 0xffffu));
+    }
     auto d=reinterpret_cast<Draw*>(data);
     std::unique_lock<std::recursive_mutex> lock(mutex,std::defer_lock);
     { hq::perf::Scope wait(msg>=WM_MOUSEMOVE && msg<=WM_MBUTTONDBLCLK?"mouse_lock_wait":nullptr); lock.lock(); }

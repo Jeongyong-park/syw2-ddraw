@@ -45,6 +45,13 @@ def compare(root):
         rows[-1]['median_cpu_percent_one_core']=statistics.median(cpu_rates) if cpu_rates else None
         rows[-1]['min_cpu_percent_one_core']=min(cpu_rates) if cpu_rates else None
         rows[-1]['max_cpu_percent_one_core']=max(cpu_rates) if cpu_rates else None
+        delivery=[r['input_delivery'] for r in runs if r.get('input_delivery',{}).get('available')]
+        rows[-1]['input_delivery_runs']=len(delivery)
+        rows[-1]['input_injected_count']=sum(r.get('input_delivery',{}).get('injected',0) for r in runs)
+        rows[-1]['input_matched_count']=sum(r.get('input_delivery',{}).get('matched',0) for r in runs)
+        for bound in ('lower','upper'):
+            values=[r[f'delivery_{bound}_bound_ms']['p95_ms'] for r in delivery]
+            rows[-1][f'median_run_p95_delivery_{bound}_bound_ms']=statistics.median(values) if values else None
     pairs=[]
     for on in rows:
         if not on['trace_enabled']: continue
@@ -74,12 +81,16 @@ def render(report):
         body.append(f'<tr><td>{html.escape(label)}</td><td>{r["repetitions"]}</td><td>{value if value is not None else "N/A"}</td>'
                     f'<td>{rate if rate is not None else "N/A"}</td><td>{displayed if displayed is not None else "N/A"}</td><td>{cpu if cpu is not None else "N/A"}</td><td><div style="background:#4e8bc6;height:12px;width:{width:.2f}%"></div></td></tr>')
     invalid=''.join(f'<li>{html.escape(r["run"])}: {html.escape(", ".join(r["reasons"]))}</li>' for r in report['invalid_runs'])
+    delivery=''.join('<tr><td>'+html.escape(f"{r['renderer']} / {r['scaling']} / VSync {r['vsync']} / fullscreen {r['fullscreen']}")+
+        f"</td><td>{r.get('input_delivery_runs',0)}</td><td>{r.get('input_matched_count',0)}/{r.get('input_injected_count',0)}</td><td>{r.get('median_run_p95_delivery_lower_bound_ms')}</td><td>{r.get('median_run_p95_delivery_upper_bound_ms')}</td></tr>"
+        for r in rows if r.get('input_delivery_runs'))
     return '<!doctype html><meta charset="utf-8"><title>HQCDD performance comparison</title>' \
         '<style>body{font:16px system-ui;max-width:1200px;margin:40px auto;padding:20px}table{border-collapse:collapse;width:100%}td,th{padding:12px;border-bottom:1px solid #ccc;text-align:left}td:last-child{width:20%}</style>' \
         f'<h1>HQCDD CPU timing comparison</h1><p>{html.escape(report["scope"])}</p>' \
         f'<p>Completed {report["completed"]}/{report["planned"]}; valid {report["valid_runs"]}. Incomplete: {report["incomplete"]}.</p>' \
         '<table><tr><th>Condition</th><th>Runs</th><th>Median run p95 CPU ms</th><th>API calls/s</th><th>ETW displayed FPS</th><th>CPU % of one core</th><th>CPU p95 comparison</th></tr>' \
-        +''.join(body)+'</table><h2>Trace ON/OFF observations</h2><pre>'+html.escape(json.dumps(report.get('trace_comparisons',[]),indent=2))+'</pre><h2>Excluded runs</h2><ul>'+invalid+'</ul>'
+        +''.join(body)+'</table><h2>Synthetic input delivery to wrapper entry</h2><p>Median of per-run p95 bounds in ms; includes OS delivery and scheduling. Not photon latency. Matched tags only; coalesced inputs are unobserved.</p>' \
+        '<table><tr><th>Condition</th><th>Runs</th><th>Matched/injected</th><th>Lower bound p95</th><th>Upper bound p95</th></tr>'+delivery+'</table><h2>Trace ON/OFF observations</h2><pre>'+html.escape(json.dumps(report.get('trace_comparisons',[]),indent=2))+'</pre><h2>Excluded runs</h2><ul>'+invalid+'</ul>'
 
 
 if __name__=='__main__':
