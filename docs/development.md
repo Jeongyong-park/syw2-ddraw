@@ -138,6 +138,7 @@ CI는 세 ZIP을 생성하고 이 테스트를 실행한 뒤 ZIP과 해시를 �
 | 경로 | 역할 |
 | --- | --- |
 | `src/ddraw.cpp` | DirectDraw7 COM 객체, Windows 메시지, 입력 훅, 설정·출력 연동 |
+| `src/display_settings.*` | 디스플레이 INI 읽기·저장, 이전 필터 키 호환, 비율 저장 결과 |
 | `src/pixels.*` | 소프트웨어 표면, 팔레트·RGB 변환, 복사·색키 |
 | `src/gpu.*` | D3D11 업로드·색상 변환·확대·readback |
 | `src/viewport.h` | 화면·GDI 자식 컨트롤·마우스의 공통 좌표 변환 |
@@ -159,6 +160,11 @@ CI는 세 ZIP을 생성하고 이 테스트를 실행한 뒤 ZIP과 해시를 �
 모두 포함하며, 사용자 ASI/DLL ZIP에는 Python 도구를 포함하지 않습니다.
 
 GDI 입력창과의 호환성을 위해 windowed blt-model swap chain을 사용합니다.
+
+`display_settings_test`는 임시 INI에서 기본값, 이전 `LinearFilter`와 `Scaling`의
+우선순위, 알 수 없는 값의 기존 해석, 미지정 비율·진단·외부 키 보존, 저장 실패를
+검사합니다. 설정 저장은 기존과 같은 키별 쓰기이며 원자적 저장을 보장하지 않습니다.
+전체 성공 여부와 비율 키 저장 성공을 구분해 UI의 저장 기준을 갱신합니다.
 전체화면은 borderless 방식이고 Alt+Enter는 래퍼가 관리합니다.
 게임의 Lock/Blt 표면은 메모리에 유지하며 최종 출력의 색상 변환·확대를 GPU에서 수행합니다.
 현재 구현은 범용 DirectDraw 대체물이 아니며 지원하지 않는 API는 오류로 처리합니다.

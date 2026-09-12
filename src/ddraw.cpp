@@ -25,6 +25,7 @@
 #include "syw2x.h"
 #include "frame_change.h"
 #include "battle_aspect.h"
+#include "display_settings.h"
 #ifdef HQCDD_ASI
 #include "asi_hook.h"
 #endif
@@ -165,20 +166,13 @@ public:
             log("frame probe requested: region=%d,%d,%d,%d stride=2 cursor_margin=64 settle_ms=250",x,y,w,h);
         }
         else if(region_length) log("frame probe disabled: invalid HQCDD_PERF_REGION");
-        initial_osd=GetPrivateProfileIntW(L"Diagnostics",L"OSD",0,local_path(L"hqcdd.ini").c_str())!=0;
-        windowed=GetPrivateProfileIntW(L"Display",L"Fullscreen",0,local_path(L"hqcdd.ini").c_str())==0;
-        wchar_t renderer[32]{};
-        GetPrivateProfileStringW(L"Display",L"Renderer",L"auto",renderer,32,local_path(L"hqcdd.ini").c_str());
-        gpu_enabled=_wcsicmp(renderer,L"gdi")!=0;
-        gpu_preferred=gpu_enabled;
-        vsync=GetPrivateProfileIntW(L"Display",L"VSync",0,local_path(L"hqcdd.ini").c_str())!=0;
-        const bool legacy_linear=GetPrivateProfileIntW(L"Display",L"LinearFilter",0,local_path(L"hqcdd.ini").c_str())!=0;
-        wchar_t legacy_filter[32]{};
-        GetPrivateProfileStringW(L"Display",L"LinearFilter",L"",legacy_filter,32,local_path(L"hqcdd.ini").c_str());
-        wchar_t filter[32]{};
-        GetPrivateProfileStringW(L"Display",L"Scaling",L"",filter,32,local_path(L"hqcdd.ini").c_str());
-        scaling=hq::parse_scaling(filter,legacy_linear,legacy_filter[0]!=L'\0');
-        log("HQCDD " HQCDD_VERSION " created; renderer=%ls",renderer);
+        const auto preferences=hq::load_display_settings(local_path(L"hqcdd.ini").c_str());
+        initial_osd=preferences.osd;
+        windowed=preferences.windowed;
+        gpu_enabled=gpu_preferred=preferences.gpu;
+        vsync=preferences.vsync;
+        scaling=preferences.scaling;
+        log("HQCDD " HQCDD_VERSION " created; renderer=%ls",preferences.renderer_name.c_str());
     }
     ~Draw();
     REFCOUNT()
@@ -731,19 +725,15 @@ void Draw::apply_settings() {
     bool saved=true;
     const bool save=IsDlgButtonChecked(settings,IDC_SAVE)==BST_CHECKED;
     if (save) {
-        const auto path=local_path(L"hqcdd.ini");
-        saved=WritePrivateProfileStringW(L"Display",L"Fullscreen",windowed?L"0":L"1",path.c_str())!=FALSE;
-        if(overlay.aspect_available) {
-            const bool aspect_saved=WritePrivateProfileStringW(L"Display",L"BattleAspect",overlay.aspect_wide?L"16:9":L"4:3",path.c_str())!=FALSE;
-            if(aspect_saved) overlay.aspect_saved_wide=overlay.aspect_wide;
-            saved=aspect_saved && saved;
-        }
-        saved=(WritePrivateProfileStringW(L"Display",L"Renderer",use_gpu?L"auto":L"gdi",path.c_str())!=FALSE)&&saved;
-        saved=(WritePrivateProfileStringW(L"Display",L"VSync",vsync?L"1":L"0",path.c_str())!=FALSE)&&saved;
-        saved=(WritePrivateProfileStringW(L"Display",L"LinearFilter",scaling==hq::Bilinear?L"1":L"0",path.c_str())!=FALSE)&&saved;
-    }
-    if(save) {
-        saved=(WritePrivateProfileStringW(L"Display",L"Scaling",hq::scaling_name(scaling),local_path(L"hqcdd.ini").c_str())!=FALSE)&&saved;
+        hq::DisplaySettings preferences;
+        preferences.windowed=windowed;
+        preferences.gpu=use_gpu; // Persist requested backend, including after GPU fallback.
+        preferences.vsync=vsync;
+        preferences.scaling=scaling;
+        const auto result=hq::save_display_settings(local_path(L"hqcdd.ini").c_str(),preferences,
+            overlay.aspect_available?std::optional<bool>(overlay.aspect_wide):std::nullopt);
+        saved=result.all_saved;
+        if(result.aspect_saved) overlay.aspect_saved_wide=overlay.aspect_wide;
     }
     if (!saved) SetDlgItemTextW(settings,IDC_STATUS,L"현재 화면에 적용했습니다. 설정 파일 저장은 실패했습니다.");
     else if(save && overlay.aspect_available && overlay.aspect_wide!=battle_aspect.wide) SetDlgItemTextW(settings,IDC_STATUS,L"전장 비율을 저장했습니다. 게임 재실행 후 적용됩니다.");
@@ -784,11 +774,8 @@ INT_PTR CALLBACK settings_proc(HWND h, UINT msg, WPARAM w, LPARAM l) {
             d->syw2x.existed?L"설정 파일의 저장값입니다. 현재 실행 중인 값과 다를 수 있습니다.":L"설정 파일이 없어 기본값을 표시합니다. 저장 시 새 파일을 만듭니다.";
         d->overlay.aspect_available=d->battle_aspect.available;
         d->overlay.aspect_wide=d->battle_aspect.wide;
-        if(d->battle_aspect.available) {
-            wchar_t aspect[32]{};
-            GetPrivateProfileStringW(L"Display",L"BattleAspect",d->battle_aspect.wide?L"16:9":L"4:3",aspect,32,local_path(L"hqcdd.ini").c_str());
-            d->overlay.aspect_wide=hq::BattleAspect::requested(aspect);
-        }
+        if(d->battle_aspect.available)
+            d->overlay.aspect_wide=hq::load_saved_battle_aspect(local_path(L"hqcdd.ini").c_str(),d->battle_aspect.wide);
         d->overlay.aspect_saved_wide=d->overlay.aspect_wide;
         d->overlay.init(h);
         for(int i=0;i<12;++i) {
