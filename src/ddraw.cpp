@@ -21,6 +21,7 @@
 #include "settings_ids.h"
 #include "overlay.h"
 #include "overlay_input.h"
+#include "gdi_child.h"
 #include "perf.h"
 #include "osd.h"
 #include "syw2x.h"
@@ -98,14 +99,6 @@ LRESULT CALLBACK settings_keys(int,WPARAM,LPARAM);
 HWND settings_window=nullptr;
 Draw* shortcut_draw=nullptr;
 constexpr DWORD WINDOW_STYLE=WS_OVERLAPPEDWINDOW|WS_VISIBLE|WS_CLIPCHILDREN;
-struct Child {
-    RECT logical{};
-    HFONT original_font=nullptr, scaled_font=nullptr;
-    LOGFONTW font{};
-    int font_height=0, font_width=0;
-    bool original_clip_siblings=false;
-    bool overlay_clipping=false;
-};
 std::set<Surface*> surfaces;
 std::set<Palette*> palettes;
 DDPIXELFORMAT pixel_format(int bpp) {
@@ -131,7 +124,7 @@ public:
     bool layout_busy=false, clip_owned=false, eat_enter=false;
     WINDOWPLACEMENT windowed_placement{sizeof(WINDOWPLACEMENT)};
     bool have_placement=false;
-    std::map<HWND,Child> children;
+    std::map<HWND,hq::GdiChild> children;
     std::unique_ptr<hq::Gpu> gpu;
     bool gpu_enabled=true, gpu_reported=false, presenting=false, vsync=false;
     int scaling=hq::SharpBilinear;
@@ -579,11 +572,7 @@ LRESULT CALLBACK child_proc(HWND h, UINT msg, WPARAM w, LPARAM l, UINT_PTR, DWOR
             if (!(pos->flags&SWP_NOSIZE)) { pos->cx=mapped.right-mapped.left; pos->cy=mapped.bottom-mapped.top; }
         }
         if (msg==WM_SETFONT) {
-            auto font=reinterpret_cast<HFONT>(w);
-            if (!font) font=static_cast<HFONT>(GetStockObject(DEFAULT_GUI_FONT));
-            if (GetObjectW(font,sizeof(child.font),&child.font)) {
-                child.original_font=font;
-                child.font_height=0; child.font_width=0;
+            if (child.set_original_font(reinterpret_cast<HFONT>(w))) {
                 d->fit_child(h); return 0;
             }
         }
@@ -917,18 +906,12 @@ void Draw::resize() {
 }
 
 RECT Draw::child_rect(HWND child, RECT logical) const {
-    auto v=viewport();
-    if (GetParent(child)!=window) { v.x=0; v.y=0; }
-    return {v.map_x(logical.left),v.map_y(logical.top),v.map_x(logical.right),v.map_y(logical.bottom)};
+    return hq::GdiChild::map_rect(child,window,logical,viewport());
 }
 void Draw::add_child(HWND h) {
     if(opening_settings || h==settings || (settings && IsChild(settings,h))) return;
     if (!IsWindow(h) || children.count(h) || !IsChild(window,h)) return;
-    Child c; GetWindowRect(h,&c.logical);
-    MapWindowPoints(HWND_DESKTOP,GetParent(h),reinterpret_cast<POINT*>(&c.logical),2);
-    c.original_font=reinterpret_cast<HFONT>(SendMessageW(h,WM_GETFONT,0,0));
-    if (!c.original_font) c.original_font=static_cast<HFONT>(GetStockObject(DEFAULT_GUI_FONT));
-    GetObjectW(c.original_font,sizeof(c.font),&c.font);
+    hq::GdiChild c; c.capture(h);
     children.emplace(h,c);
     if (!SetWindowSubclass(h,child_proc,1,reinterpret_cast<DWORD_PTR>(this))) { children.erase(h); return; }
     update_child_clipping(h);
@@ -940,28 +923,15 @@ void Draw::remove_child(HWND h, bool restore) {
     auto it=children.find(h); if (it==children.end()) return;
     const auto c=it->second;
     children.erase(it);
-    if (restore && IsWindow(h)) {
-        RemoveWindowSubclass(h,child_proc,1);
-        if (c.overlay_clipping) {
-            const auto style=GetWindowLongPtrW(h,GWL_STYLE)&~LONG_PTR(WS_CLIPSIBLINGS);
-            SetWindowLongPtrW(h,GWL_STYLE,style|(c.original_clip_siblings?WS_CLIPSIBLINGS:0));
-        }
-        SendMessageW(h,WM_SETFONT,reinterpret_cast<WPARAM>(c.original_font),TRUE);
-        SetWindowPos(h,nullptr,c.logical.left,c.logical.top,c.logical.right-c.logical.left,c.logical.bottom-c.logical.top,SWP_NOZORDER|SWP_NOACTIVATE);
-    }
-    if (c.scaled_font) DeleteObject(c.scaled_font);
+    if (restore && IsWindow(h)) RemoveWindowSubclass(h,child_proc,1);
+    c.release(h,restore);
 }
 void Draw::update_child_clipping(HWND h) {
     auto it=children.find(h); if (it==children.end() || !IsWindow(h)) return;
     auto& c=it->second;
     // Only the game's direct children are siblings of the full-client overlay.
     const bool enabled=IsWindow(settings) && GetParent(h)==window;
-    if (enabled==c.overlay_clipping) return;
-    const auto style=GetWindowLongPtrW(h,GWL_STYLE);
-    if (enabled) c.original_clip_siblings=(style&WS_CLIPSIBLINGS)!=0;
-    c.overlay_clipping=enabled;
-    SetWindowLongPtrW(h,GWL_STYLE,(style&~LONG_PTR(WS_CLIPSIBLINGS))|
-        ((enabled || c.original_clip_siblings)?WS_CLIPSIBLINGS:0));
+    c.update_clipping(h,enabled);
 }
 void Draw::update_children_clipping() {
     // Do not enumerate/register windows while the settings dialog is being destroyed.
@@ -973,21 +943,8 @@ void Draw::fit_child(HWND h) {
     auto it=children.find(h); if (it==children.end()) return;
     auto& c=it->second; const bool previous=layout_busy; layout_busy=true;
     auto r=child_rect(h,c.logical);
-    RECT current{}; GetWindowRect(h,&current); MapWindowPoints(HWND_DESKTOP,GetParent(h),reinterpret_cast<POINT*>(&current),2);
-    if (!EqualRect(&r,&current))
-        SetWindowPos(h,nullptr,r.left,r.top,std::max(1L,r.right-r.left),std::max(1L,r.bottom-r.top),SWP_NOZORDER|SWP_NOACTIVATE);
-    const auto v=viewport();
-    LOGFONTW font=c.font;
-    font.lfHeight=MulDiv(font.lfHeight,v.height,height); font.lfWidth=MulDiv(font.lfWidth,v.width,width);
-    if (!font.lfHeight) font.lfHeight=-1;
-    if (font.lfHeight!=c.font_height || font.lfWidth!=c.font_width) {
-        HFONT scaled=CreateFontIndirectW(&font);
-        if (scaled) {
-            SendMessageW(h,WM_SETFONT,reinterpret_cast<WPARAM>(scaled),TRUE);
-            if (c.scaled_font) DeleteObject(c.scaled_font);
-            c.scaled_font=scaled; c.font_height=font.lfHeight; c.font_width=font.lfWidth;
-        }
-    }
+    hq::GdiChild::position(h,r);
+    c.scale_font(h,viewport(),width,height);
     layout_busy=previous;
 }
 void Draw::sync_children() {
