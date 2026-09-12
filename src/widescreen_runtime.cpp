@@ -1,49 +1,42 @@
 #include "widescreen_runtime.h"
 #include "widescreen_recipe.h"
 #include <windows.h>
-#include <bcrypt.h>
-#include <array>
-#include <cstring>
 #include <cwchar>
 #include <string>
 #include <vector>
+#include <new>
 
 namespace hq {
 namespace {
-bool matching_file() {
+WideFailure compatible_file() {
     wchar_t path[32768]{};
     const auto length=GetModuleFileNameW(nullptr,path,32768);
-    if(!length || length>=32768) return false;
+    if(!length || length>=32768) return WideFailure::file;
     HANDLE file=CreateFileW(path,GENERIC_READ,FILE_SHARE_READ,nullptr,OPEN_EXISTING,FILE_ATTRIBUTE_NORMAL,nullptr);
-    if(file==INVALID_HANDLE_VALUE) return false;
-    BCRYPT_ALG_HANDLE algorithm=nullptr;
-    BCRYPT_HASH_HANDLE hash=nullptr;
-    DWORD object_size=0,received=0;
-    bool okay=BCryptOpenAlgorithmProvider(&algorithm,BCRYPT_SHA256_ALGORITHM,nullptr,0)>=0;
-    if(okay) okay=BCryptGetProperty(algorithm,BCRYPT_OBJECT_LENGTH,
-        reinterpret_cast<PUCHAR>(&object_size),sizeof(object_size),&received,0)>=0;
-    std::vector<uint8_t> object(okay?object_size:0);
-    if(okay) okay=BCryptCreateHash(algorithm,&hash,object.data(),object_size,nullptr,0,0)>=0;
-    std::array<uint8_t,65536> buffer{};
-    while(okay) {
-        DWORD count=0;
-        if(!ReadFile(file,buffer.data(),DWORD(buffer.size()),&count,nullptr)) { okay=false; break; }
-        if(!count) break;
-        okay=BCryptHashData(hash,buffer.data(),count,0)>=0;
-    }
-    std::array<uint8_t,32> digest{};
-    if(okay) okay=BCryptFinishHash(hash,digest.data(),DWORD(digest.size()),0)>=0 &&
-        std::memcmp(digest.data(),wide_recipe::sha256,digest.size())==0;
-    if(hash) BCryptDestroyHash(hash);
-    if(algorithm) BCryptCloseAlgorithmProvider(algorithm,0);
-    CloseHandle(file);
-    return okay;
+    if(file==INVALID_HANDLE_VALUE) return WideFailure::file;
+    struct Close { HANDLE handle; ~Close(){CloseHandle(handle);} } close{file};
+    LARGE_INTEGER size{};
+    if(!GetFileSizeEx(file,&size) || size.QuadPart<=0 || size.QuadPart>64*1024*1024) return WideFailure::file;
+    std::vector<uint8_t> bytes(size_t(size.QuadPart));
+    DWORD received=0;
+    if(!ReadFile(file,bytes.data(),DWORD(bytes.size()),&received,nullptr) || received!=bytes.size()) return WideFailure::file;
+    return check_widescreen_file(bytes.data(),bytes.size(),wide_recipe::compatibility);
 }
 }
 
 WideRuntimeResult initialize_widescreen(const wchar_t* ini) {
     auto base=reinterpret_cast<uint8_t*>(GetModuleHandleW(nullptr));
-    if(uintptr_t(base)!=0x400000 || !matching_file()) return {};
+    if(uintptr_t(base)!=0x400000) return {false,false,"unsupported image base",0,WideFailure::structure};
+    WideFailure failure=WideFailure::none;
+    try { failure=compatible_file(); }
+    catch(const std::bad_alloc&) { failure=WideFailure::memory; }
+    if(failure!=WideFailure::none) {
+        const char* reason=failure==WideFailure::code?"executable code section differs":
+            failure==WideFailure::data?"executable data section differs":
+            failure==WideFailure::file?"executable file read failed":
+            failure==WideFailure::memory?"executable validation allocation failed":"executable layout differs";
+        return {false,false,reason,0,failure};
+    }
     wchar_t value[32]{};
     GetPrivateProfileStringW(L"Display",L"BattleAspect",L"4:3",value,32,ini);
     const bool wanted=std::wcscmp(value,L"16:9")==0;

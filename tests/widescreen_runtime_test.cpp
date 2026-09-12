@@ -23,14 +23,18 @@ int main() {
         CHECK(state.available && !state.wide); unchanged();
         state=hq::apply_widescreen_image(image,true,true);
         CHECK(state.available && !state.wide && !state.allocation); unchanged();
+        CHECK(state.failure==hq::WideFailure::syw2x);
         state=hq::apply_widescreen_image(image,false,true);
         CHECK(state.available && !state.wide && !state.allocation); unchanged();
         constexpr size_t count=sizeof(patches)/sizeof(patches[0]);
         const auto& last=patches[count-1];
         image[last.address-0x400000]^=1;
-        CHECK(!hq::apply_widescreen_image(image,true).available);
+        CHECK(hq::apply_widescreen_image(image,true).failure==hq::WideFailure::conflict);
         CHECK(!hq::apply_widescreen_image(image,true,true).available);
         image[last.address-0x400000]^=1; unchanged();
+        nt->FileHeader.TimeDateStamp^=1; // Resource tools often change PE metadata.
+        nt->OptionalHeader.SizeOfImage+=0x1000;
+        CHECK(hq::apply_widescreen_image(image,false).available); unchanged();
         occupied=VirtualAlloc(reinterpret_cast<void*>(allocation_base),allocation_size,MEM_RESERVE,PAGE_NOACCESS);
         CHECK(occupied || GetLastError()==ERROR_INVALID_ADDRESS);
         DWORD old=0;
