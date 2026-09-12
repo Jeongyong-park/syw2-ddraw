@@ -185,6 +185,17 @@ int wmain(int argc, wchar_t** argv) {
     SetFocus(edit); SendMessageW(edit,WM_SYSKEYDOWN,VK_RETURN,alt_enter);
     SendMessageW(edit,WM_SYSKEYUP,VK_RETURN,alt_enter|(LPARAM(1)<<31));
     RECT restored{}; GetWindowRect(window,&restored); CHECK(EqualRect(&restored,&old_window));
+    // Real subclass dispatch constrains client dimensions without changing the DD mode.
+    RECT resize_outer{},resize_client{};
+    CHECK(GetWindowRect(window,&resize_outer) && GetClientRect(window,&resize_client));
+    const LONG frame_w=resize_outer.right-resize_outer.left-resize_client.right;
+    const LONG frame_h=resize_outer.bottom-resize_outer.top-resize_client.bottom;
+    for(WPARAM edge=WMSZ_LEFT;edge<=WMSZ_BOTTOMRIGHT;++edge) {
+        RECT proposed{100,100,913,617};
+        CHECK(SendMessageW(window,WM_SIZING,edge,reinterpret_cast<LPARAM>(&proposed))==TRUE);
+        CHECK(std::abs((proposed.right-proposed.left-frame_w)*3-(proposed.bottom-proposed.top-frame_h)*4)<=2);
+    }
+    OK(d->GetDisplayMode(&mode)); CHECK(mode.dwWidth==64 && mode.dwHeight==48);
     CHECK(GetFocus()==edit);
     GetClientRect(window,&client); v=hq::Viewport::fit(client.right,client.bottom,64,48);
     GetWindowRect(edit,&childrect); MapWindowPoints(nullptr,window,reinterpret_cast<POINT*>(&childrect),2);

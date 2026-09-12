@@ -31,5 +31,17 @@ python -m tools.widescreen.export_widescreen_patch --help
 
 보고서 도구와 `--help`에는 게임 파일이 필요 없습니다. 실제 와이드 분석·생성에는
 도구별로 pefile, Capstone, Unicorn 및 지원 게임 원본이 필요합니다.
+
+`re_graphics_timing.py`의 의존성은 실행에 사용할 Python 환경에 설치합니다.
+
+```powershell
+python -m pip install pefile capstone
+python tools/re_graphics_timing.py --help
+```
+
+Pylance에서 `reportMissingImports`가 표시되면 VS Code의 `Python: Select Interpreter`가
+위 설치 명령을 실행한 환경과 같은지 확인합니다. 해당 Python 경로는
+`python -c "import sys; print(sys.executable)"`로 확인할 수 있습니다.
+
 게임 실행, 커서 이동, 시제품 생성 등의 효과는 각 도구의 실행 옵션을 확인합니다.
 패키지 import나 도움말만으로 게임을 실행하지 않습니다.
