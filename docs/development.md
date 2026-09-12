@@ -1,8 +1,8 @@
 # 개발자 안내
 
 일반 사용자 설치·설정 안내는 [README](../README.md)를 참고합니다.
-이 문서는 저장소에서 DLL을 빌드하고 테스트·패키징하는 개발자를 대상으로 합니다.
-최종 사용자 기본 설치는 DLL 교체 방식입니다. Python과 빌드 도구는 개발·패키징·별도 시험본 생성에만 필요합니다.
+이 문서는 저장소에서 ASI와 DLL 호환판을 빌드하고 테스트·패키징하는 개발자를 대상으로 합니다.
+기본 배포 방식은 기존 ESL 로더를 유지하는 ASI입니다. Python과 빌드 도구는 개발·패키징·별도 시험본 생성에만 필요합니다.
 
 ## 환경과 빌드
 
@@ -16,9 +16,9 @@ Python 3.10 이상이 필요합니다. 게임 프로세스에 맞춰 DLL은 x86�
 python -m unittest discover -s tests -p "test_*.py" -v
 ```
 
-산출물은 `build/Release/hqcdd.dll`입니다. 기본 사용자 설치에서는 이 파일을
-게임 EXE 옆에 `ddraw.dll`로 복사하고 `hqcdd.ini`를 함께 둡니다.
-빌드 산출물 이름을 바꾸거나 EXE를 패치할 필요는 없습니다. MSVC 런타임을 정적 링크합니다.
+산출물은 `build/Release/hqcdd.asi`와 `build/Release/hqcdd.dll`입니다.
+기본 설치는 ASI를 기존 로더의 `plugins` 폴더에 두고 `hqcdd.ini`를 게임 EXE 옆에 둡니다.
+기존 설정은 보존합니다. 원본 EXE 파일은 수정하지 않으며 MSVC 런타임을 정적 링크합니다.
 Debug는 `.\build.ps1 -Configuration Debug`로 빌드합니다.
 
 빌드만 수행하려면:
@@ -67,7 +67,17 @@ Windows API나 DllMain을 실행하지 않으며 GDI·IME·GPU·게임 진행 �
 
 ## 설치 방식과 패키징
 
-### 기본 설치: DLL 교체
+### 기본 설치: ASI
+
+1. 기존 ESL의 ASI 로더와 SYW2X를 유지합니다.
+2. `build/Release/hqcdd.asi`를 게임의 `plugins/hqcdd.asi`로 복사합니다.
+3. `hqcdd.ini`는 게임 EXE 옆에 두며 기존 파일을 덮어쓰지 않습니다.
+
+DLL판에서 이전할 때는 기존 로더 복원이 먼저 필요합니다.
+[ASI 설치·복구 안내](../ASI-INSTALL.txt)와 [연결 방식](asi-integration.md)을 따릅니다.
+로더와 SYW2X 바이너리는 배포 ZIP에 포함하지 않습니다.
+
+### DLL 호환판: 로더 교체
 
 1. 기존 게임 폴더의 ddraw.dll을 백업합니다.
 2. 빌드한 hqcdd.dll을 게임 EXE 옆에 ddraw.dll로 복사합니다.
@@ -99,24 +109,27 @@ python .\prepare.py "D:\syw2plus\조선의반격 오리지날 실행 충무공�
 
 ```powershell
 python .\package.py
+python .\package.py --asi
 python .\package.py --developer
 .\tests\test_distribution.ps1
 ```
 
-- `output/syw2-ddraw-v<버전>.zip`: 최종사용자용. 루트에 ddraw.dll, hqcdd.ini, INSTALL.txt와 문서를 제공합니다.
+- `output/syw2-ddraw-v<버전>-asi.zip`: 기본 릴리즈용. plugins/hqcdd.asi와 설정·설치 안내를 제공합니다.
+- `output/syw2-ddraw-v<버전>.zip`: DLL 호환판. 루트에 ddraw.dll, hqcdd.ini, INSTALL.txt와 문서를 제공합니다.
 - `output/syw2-ddraw-v<버전>-developer.zip`: 소스·도구·테스트와 build/Release/hqcdd.dll을 syw2-ddraw/ 아래에 제공합니다.
 - 각 ZIP 옆의 `.zip.sha256`은 ZIP 전체 해시이며, ZIP 안의 `SHA256SUMS.txt`는 해당 파일을 제외한 내부 파일별 해시입니다.
 
 패키징 명령은 VERSION과 실제 DLL 속성을 먼저 비교합니다.
 필수 파일 누락이나 ZIP 생성 실패 시 기존 ZIP을 보존하며 게임 EXE·Git 내부 파일·기존 산출물은 제외합니다.
-스크린샷을 포함한 docs 문서는 두 ZIP 모두에 들어갑니다. 사용자 설치에는 개발 도구가 필요 없습니다.
+스크린샷을 포함한 docs 문서는 세 ZIP 모두에 들어갑니다. 사용자 설치에는 개발 도구가 필요 없습니다.
 
 `test_distribution.ps1`은 사용자 ZIP을 한글·공백이 포함된 임시 폴더에 풀고 DLL 메타데이터를 확인합니다.
 시스템 ddraw import library로 링크한 loader_test.exe가 옆의 ddraw.dll을 자동으로 불러오는지,
 영상 파일 없이 시스템 amstream.dll 로딩, DirectDrawCreate를 통한 시스템 IDirectDraw 생성,
 DirectDraw7 생성 및 시스템 클리퍼 위임을 확인한 뒤 임시 폴더를 정리합니다.
 영상 제거 여부와 별개로 AMStream의 DDRAW.dll import에 필요한 DirectDrawCreate export를 검사합니다.
-CI에서도 두 ZIP을 생성하고 이 테스트를 실행한 뒤 ZIP과 해시를 아티팩트로 보관합니다.
+ASI ZIP은 기존 import를 ASI 코어로 연결하는 경로도 검사합니다.
+CI는 세 ZIP을 생성하고 이 테스트를 실행한 뒤 ZIP과 해시를 아티팩트로 보관합니다.
 이는 실제 게임의 로그인·전투·종료나 개발 도구 없는 Windows 10·11 검증을 대체하지 않습니다.
 남은 실기기 검증과 기록 양식은 [0.6 구현·검증 계획](milestone-0.6.md)에 있습니다.
 
@@ -131,6 +144,9 @@ CI에서도 두 ZIP을 생성하고 이 테스트를 실행한 뒤 ZIP과 해시
 | `src/scaling.h` | 확대 방식 이름과 이전 설정 해석 |
 | `src/overlay.*`, `src/settings.*` | 게임 화면 안의 설정 UI |
 | `src/version.*.in` | VERSION에서 생성하는 로그 헤더·Windows 버전 리소스 |
+| `src/widescreen_runtime.*`, `src/widescreen_recipe.h` | 운영 ASI의 실험적 전장 패치와 생성 명세 |
+| `src/battle_aspect.h` | 비율 초기화 및 구형 시제품 호환 |
+| `tests/support/wide_terrain_model.h` | 테스트 전용 초기 캐시 모델. 운영 구현과 구분 |
 | `prepare.py`, `launch.ps1` | 개발·비교용 별도 실행본 생성과 검증·실행 |
 | `package.py` | 배포 파일 선택 및 ZIP 생성 |
 
@@ -181,7 +197,7 @@ Sharp Bilinear는 정수 픽셀 복제 후 bilinear 보간의 효과를 직접 �
 UI가 바뀌면 해당 버전에서 다시 캡처하고 파일명·본문 캡션을 함께 갱신하세요.
 계정·채팅·비밀번호가 보이는 화면을 문서에 넣지 않습니다.
 이미지를 추가할 때 패키지 포함 여부도 검사합니다. 게임 화면의 권리는 게임 권리자에게 있습니다.
-# 기본 릴리즈 산출물
+## 기본 릴리즈 산출물
 
 다음 새 버전부터 `python package.py --asi`의 `syw2-ddraw-v<버전>-asi.zip`과
 체크섬만 GitHub Release에 게시합니다. 일반 DLL ZIP과 개발용 ZIP은 CI 산출물로 유지합니다.
