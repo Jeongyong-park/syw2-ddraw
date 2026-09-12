@@ -1,4 +1,6 @@
 #include "../src/battle_aspect.h"
+#include <windows.h>
+#include <cstring>
 #include <cstdio>
 #include <stdexcept>
 #define CHECK(x) do { if(!(x)) throw std::runtime_error(#x); } while(0)

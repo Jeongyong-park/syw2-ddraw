@@ -163,7 +163,7 @@ CI는 세 ZIP을 생성하고 이 테스트를 실행한 뒤 ZIP과 해시를 �
 | `src/widescreen_runtime.*` | 운영 EXE의 SHA-256 확인, 비율·SYW2X 설정 조회, 와이드 초기화 진입점 |
 | `src/widescreen_image.cpp` | 메모리 이미지·패치 전 바이트 검증, 주소 재배치, 패치 적용·보호 속성 복원 |
 | `src/widescreen_recipe.h` | 생성된 와이드 패치 명세·코드·재배치 목록 |
-| `src/battle_aspect.h` | 비율 초기화 및 구형 시제품 호환 |
+| `src/battle_aspect.*` | 시작 시 비율 초기화, 구형 시제품 복원, ASI 운영 초기화 연결 |
 | `tests/support/wide_terrain_model.h` | 테스트 전용 초기 캐시 모델. 운영 구현과 구분 |
 | `prepare.py`, `launch.ps1` | 개발·비교용 별도 실행본 생성과 검증·실행 |
 | `package.py` | 배포 파일 선택 및 ZIP 생성 |
@@ -184,6 +184,11 @@ GDI 입력창과의 호환성을 위해 windowed blt-model swap chain을 사용�
 이미지에서 4:3 무변경, SYW2X 확장 충돌, 패치 전 바이트 불일치, 주소 재배치와
 보호 속성 복원을 검사합니다. 이 테스트가 운영 EXE의 해시 검사를 대신하지는 않습니다.
 성공한 패치의 할당 메모리는 게임 코드에서 계속 참조하므로 프로세스 종료까지 유지합니다.
+
+`battle_aspect.h`는 상태와 초기화 API만 선언합니다. `.cpp`의 구형 시제품 처리에서는
+`.hqcode`의 `HQASPECT` 복원 표를 검증하며, ASI 빌드에서는 시제품으로 인식되지 않은
+이미지를 운영 와이드 초기화로 전달합니다. DLL 호환판에는 이 운영 초기화 분기가 없습니다.
+시제품의 비율 미지정 기본값(16:9)과 운영 원본의 기본값(4:3)은 각 경로에서 유지합니다.
 
 `display_settings_test`는 임시 INI에서 기본값, 이전 `LinearFilter`와 `Scaling`의
 우선순위, 알 수 없는 값의 기존 해석, 미지정 비율·진단·외부 키 보존, 저장 실패를
