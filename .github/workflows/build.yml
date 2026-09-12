@@ -27,16 +27,16 @@ jobs:
         run: cmake -S . -B build -A Win32
       - name: Build wrapper and native tests
         run: cmake --build build --config Release
-      - name: Test OSD statistics, frame change detection and ASI imports
-        run: ctest --test-dir build -C Release -R "osd_stats_test|frame_change_test|asi_import_test|asi_duplicate_test|asi_intercepted_test|syw2x_test|widescreen_test|battle_aspect_test|widescreen_runtime_test|display_settings_test|gdi_child_test" --output-on-failure
+      - name: Run CI native tests
+        run: ctest --test-dir build -C Release -L "^ci$" --no-tests=error --output-on-failure
       - name: Test production coordinate transform in Unicorn
         run: python tests/unicorn_viewport.py --report output/unicorn-viewport.json
       - name: Verify DLL version and author
         run: ./tests/test_version.ps1
       - name: Verify preparation and packaging
         run: python -m unittest discover -s tests -p test_*.py -v
-      # Native runtime tests require an interactive desktop and a hardware D3D11
-      # device. Run build.ps1 locally; hosted CI only verifies their compilation.
+      # Tests labeled desktop require an interactive desktop and hardware D3D11.
+      # Run build.ps1 locally; hosted CI only verifies their compilation.
       - name: Build compatibility DLL archive
         run: python package.py
       - name: Build developer archive
