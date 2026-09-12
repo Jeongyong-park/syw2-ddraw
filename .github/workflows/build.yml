@@ -17,8 +17,8 @@ jobs:
   windows-build:
     runs-on: windows-2022
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: '3.12'
       - name: Install CPU emulator
@@ -51,14 +51,14 @@ jobs:
           $tag = 'v' + (Get-Content VERSION -Raw).Trim()
           if ($env:GITHUB_REF_TYPE -eq 'tag') { $tag = $env:GITHUB_REF_NAME }
           python tools/release.py --tag $tag
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v6
         with:
           name: syw2-ddraw-distributions
           path: |
             output/*.zip
             output/*.zip.sha256
           if-no-files-found: error
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v6
         if: always() && hashFiles('output/unicorn-viewport.json') != ''
         with:
           name: unicorn-viewport-report
@@ -72,11 +72,11 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: '3.12'
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v7
         with:
           name: syw2-ddraw-distributions
           path: output
