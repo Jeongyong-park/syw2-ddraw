@@ -484,7 +484,7 @@ LRESULT CALLBACK window_proc(HWND h, UINT msg, WPARAM w, LPARAM l, UINT_PTR, DWO
     if (msg==WM_SIZING && d->windowed && !d->layout_busy && l) {
         RECT outer{},client{};
         if(GetWindowRect(h,&outer) && GetClientRect(h,&client) &&
-           hq::constrain_window_aspect(*reinterpret_cast<RECT*>(l),w,
+           hq::constrain_window_aspect(*reinterpret_cast<RECT*>(l),outer,w,
                (outer.right-outer.left)-(client.right-client.left),
                (outer.bottom-outer.top)-(client.bottom-client.top),d->width,d->height)) return TRUE;
     }
