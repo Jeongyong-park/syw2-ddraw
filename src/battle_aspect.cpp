@@ -12,12 +12,12 @@ bool BattleAspect::requested(const wchar_t* value) { return std::wcscmp(value,L"
 
 BattleAspect BattleAspect::initialize(const wchar_t* ini) {
     auto base=reinterpret_cast<uint8_t*>(GetModuleHandleW(nullptr));
-    if(uintptr_t(base)!=0x400000) return {};
+    if(uintptr_t(base)!=0x400000) return {false,false,"unsupported image base",WideFailure::structure};
     auto result=initialize_image(base,ini);
     if(result.available) return result;
 #ifdef HQCDD_ASI
     const auto runtime=initialize_widescreen(ini);
-    return {runtime.available,runtime.wide,runtime.reason};
+    return {runtime.available,runtime.wide,runtime.reason,runtime.failure};
 #else
     return result;
 #endif

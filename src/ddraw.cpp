@@ -94,6 +94,8 @@ LRESULT CALLBACK window_proc(HWND,UINT,WPARAM,LPARAM,UINT_PTR,DWORD_PTR);
 LRESULT CALLBACK child_proc(HWND,UINT,WPARAM,LPARAM,UINT_PTR,DWORD_PTR);
 constexpr UINT WM_HQ_LAYOUT=WM_APP+0x6d0;
 constexpr UINT WM_HQ_ACTIVATION=WM_APP+0x6d1;
+constexpr UINT WM_HQ_ASPECT_NOTICE=WM_APP+0x6d2;
+bool aspect_notice_shown=false;
 constexpr UINT MENU_FULLSCREEN=0x1e10, MENU_WINDOWED=0x1e20, MENU_SETTINGS=0x1e30, MENU_OSD=0x1e40, MENU_BENCH=0x1e50;
 INT_PTR CALLBACK settings_proc(HWND,UINT,WPARAM,LPARAM);
 LRESULT CALLBACK settings_keys(int,WPARAM,LPARAM);
@@ -136,6 +138,7 @@ public:
     hq::PerformanceOsd osd;
     hq::Syw2xConfig syw2x;
     hq::BattleAspect battle_aspect;
+    bool aspect_notice_pending=false,aspect_notice_posted=false;
     bool initial_osd=false;
     bool game_activation_delivered=false;
     bool activation_pending=false;
@@ -147,7 +150,11 @@ public:
     Draw() {
         static const auto startup_aspect=hq::BattleAspect::initialize(local_path(L"hqcdd.ini").c_str());
         battle_aspect=startup_aspect;
-        log("Battle aspect startup: selectable=%d wide=%d reason=%s",battle_aspect.available,battle_aspect.wide,battle_aspect.reason);
+        log("Battle aspect startup: selectable=%d wide=%d failure=%d reason=%s",battle_aspect.available,battle_aspect.wide,int(battle_aspect.failure),battle_aspect.reason);
+#ifdef HQCDD_ASI
+        aspect_notice_pending=!battle_aspect.wide && battle_aspect.failure!=hq::WideFailure::none &&
+            hq::load_saved_battle_aspect(local_path(L"hqcdd.ini").c_str(),false);
+#endif
         wchar_t region[128]{}; int x=0,y=0,w=0,h=0; wchar_t trailing=0;
         const auto region_length=GetEnvironmentVariableW(L"HQCDD_PERF_REGION",region,128);
         if(region_length && region_length<128 && swscanf_s(region,L"%d,%d,%d,%d%c",&x,&y,&w,&h,&trailing,1u)==4 &&
@@ -452,6 +459,17 @@ LRESULT CALLBACK window_proc(HWND h, UINT msg, WPARAM w, LPARAM l, UINT_PTR, DWO
     }
     if (msg==WM_PARENTNOTIFY && LOWORD(w)==WM_CREATE) d->add_child(reinterpret_cast<HWND>(l));
     if (msg==WM_HQ_LAYOUT) { d->sync_children(); d->present(); return 0; }
+    if(msg==WM_HQ_ASPECT_NOTICE) {
+        d->aspect_notice_posted=false;
+        if(d->aspect_notice_pending && !aspect_notice_shown && !d->settings && d->primary &&
+           IsWindowVisible(h) && !IsIconic(h) && GetForegroundWindow()==h) {
+            d->overlay.notice_page=true;
+            d->open_settings();
+            if(d->settings) { aspect_notice_shown=true; d->aspect_notice_pending=false; }
+            else d->overlay.notice_page=false;
+        }
+        return 0;
+    }
     if (msg==WM_HQ_ACTIVATION) {
         d->activation_pending=false;
         // Recheck after Windows finishes activation. ESL rejects WM_ACTIVATEAPP
@@ -664,7 +682,7 @@ LRESULT CALLBACK settings_keys(int code, WPARAM w, LPARAM l) {
     return CallNextHookEx(nullptr,code,w,l);
 }
 void Draw::open_settings() {
-    if (IsWindow(settings_window)) { SetFocus(GetDlgItem(settings_window,IDC_WINDOWED)); return; }
+    if (IsWindow(settings_window)) { SetFocus(GetDlgItem(settings_window,overlay.notice_page?IDCANCEL:IDC_WINDOWED)); return; }
     previous_focus=GetFocus();
     hq::overlay_input::begin_input();
     overlay.integer_scaling=scaling==hq::Integer;
@@ -682,7 +700,7 @@ void Draw::open_settings() {
     settings_window=settings;
     sync_children();
     update_clip();
-    ShowWindow(settings,SW_SHOW); SetFocus(GetDlgItem(settings,IDC_WINDOWED));
+    ShowWindow(settings,SW_SHOW); SetFocus(GetDlgItem(settings,overlay.notice_page?IDCANCEL:IDC_WINDOWED));
     osd.suspend(true);
     hq::overlay_input::begin_cursor();
     log("Display overlay opened");
@@ -695,6 +713,7 @@ void Draw::close_settings() {
     if (IsWindow(h)) DestroyWindow(h);
     update_children_clipping();
     overlay.background.clear();
+    overlay.notice_page=false;
     if(IsWindow(window)) RedrawWindow(window,nullptr,nullptr,RDW_INVALIDATE|RDW_ALLCHILDREN);
 }
 void Draw::apply_settings() {
@@ -766,6 +785,8 @@ INT_PTR CALLBACK settings_proc(HWND h, UINT msg, WPARAM w, LPARAM l) {
         d->overlay.syw2x_status=!d->syw2x.readable?L"syw2x.ini를 읽을 수 없습니다. 파일 권한을 확인하세요.":
             d->syw2x.existed?L"설정 파일의 저장값입니다. 현재 실행 중인 값과 다를 수 있습니다.":L"설정 파일이 없어 기본값을 표시합니다. 저장 시 새 파일을 만듭니다.";
         d->overlay.aspect_available=d->battle_aspect.available;
+        d->overlay.aspect_error=hq::widescreen_failure_message(d->battle_aspect.failure);
+        if(!d->overlay.aspect_error.empty()) SetDlgItemTextW(h,IDC_STATUS,d->overlay.aspect_error.c_str());
         d->overlay.aspect_wide=d->battle_aspect.wide;
         if(d->battle_aspect.available)
             d->overlay.aspect_wide=hq::load_saved_battle_aspect(local_path(L"hqcdd.ini").c_str(),d->battle_aspect.wide);
@@ -790,6 +811,10 @@ INT_PTR CALLBACK settings_proc(HWND h, UINT msg, WPARAM w, LPARAM l) {
     if(msg==WM_DRAWITEM) { d->overlay.button(h,*reinterpret_cast<DRAWITEMSTRUCT*>(l)); return TRUE; }
     if (msg==WM_COMMAND) {
         int id=LOWORD(w);
+        if(d->overlay.notice_page) {
+            if(id==IDCANCEL || id==IDOK) SendMessageW(h,WM_CLOSE,0,0);
+            return TRUE;
+        }
         if(id==IDC_ASPECT_43 || id==IDC_ASPECT_169) {
             if(d->overlay.aspect_available) d->overlay.aspect_wide=id==IDC_ASPECT_169;
             RedrawWindow(h,nullptr,nullptr,RDW_INVALIDATE|RDW_ALLCHILDREN); return TRUE;
@@ -981,6 +1006,9 @@ void Draw::present(const char* reason, const hq::Rect* dirty) {
         hq::perf::mark("output_skipped",presenting?1:layout_busy?2:!primary?3:primary->busy()?4:!IsWindow(window)?5:6);
         return;
     }
+    if(aspect_notice_pending && !aspect_notice_shown && !aspect_notice_posted && !settings &&
+       IsWindowVisible(window) && GetForegroundWindow()==window)
+        aspect_notice_posted=PostMessageW(window,WM_HQ_ASPECT_NOTICE,0,0)!=FALSE;
     const auto osd_start=osd.enabled()?hq::PerformanceOsd::now():0;
     presenting=true;
     struct Reset { bool& b; ~Reset(){b=false;} } reset{presenting};

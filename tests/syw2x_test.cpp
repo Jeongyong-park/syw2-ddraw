@@ -36,6 +36,14 @@ void check_palette_ui() {
     GetWindowRect(GetDlgItem(panel,IDC_ASPECT_169),&aspect);
     GetWindowRect(GetDlgItem(panel,IDC_GDI),&renderer);
     CHECK(mode.bottom<=aspect.top && aspect.bottom<=renderer.top);
+    overlay.notice_page=true; overlay.aspect_error=L"게임 실행 코드가 변경되어 16:9를 적용할 수 없습니다.";
+    overlay.layout(panel);
+    CHECK(GetWindowLongPtrW(GetDlgItem(panel,IDCANCEL),GWL_STYLE)&WS_VISIBLE);
+    for(int id:{IDC_APPLY,IDC_TAB_DISPLAY,IDC_TAB_SYW2X,IDC_ASPECT_43,IDC_ASPECT_169,IDC_WINDOWED})
+        CHECK(!(GetWindowLongPtrW(GetDlgItem(panel,id),GWL_STYLE)&WS_VISIBLE));
+    wchar_t caption[32]{}; GetDlgItemTextW(panel,IDCANCEL,caption,32); CHECK(std::wstring(caption)==L"확인");
+    overlay.notice_page=false; overlay.layout(panel);
+    CHECK(GetWindowLongPtrW(GetDlgItem(panel,IDC_TAB_DISPLAY),GWL_STYLE)&WS_VISIBLE);
     overlay.syw2x_page=true;
     SetDlgItemTextW(panel,IDC_SYW2X_FIRST+5,L"0x44");
     SetDlgItemTextW(panel,IDC_SYW2X_FIRST+11,L"0xF4F3F2F1");

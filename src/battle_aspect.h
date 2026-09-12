@@ -1,5 +1,6 @@
 #pragma once
 #include <cstdint>
+#include "widescreen_compatibility.h"
 
 namespace hq {
 // Startup-only aspect selection. Preserves reversible prototype EXEs; ASI builds
@@ -7,6 +8,7 @@ namespace hq {
 struct BattleAspect {
     bool available=false, wide=false;
     const char* reason="legacy prototype or unsupported executable";
+    WideFailure failure=WideFailure::none;
     static bool requested(const wchar_t* value);
     static BattleAspect initialize(const wchar_t* ini);
     // Prototype compatibility only. Tests supply a private mapped image.

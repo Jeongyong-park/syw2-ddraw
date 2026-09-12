@@ -118,6 +118,16 @@ void Overlay::layout(HWND h) {
     auto font=[&](int size,int weight) { return CreateFontW(-std::max(1,int(size*scale)),0,0,0,weight,FALSE,FALSE,FALSE,DEFAULT_CHARSET,OUT_DEFAULT_PRECIS,CLIP_DEFAULT_PRECIS,ANTIALIASED_QUALITY,DEFAULT_PITCH,L"맑은 고딕"); };
     if(heading) DeleteObject(heading); if(body) DeleteObject(body); if(small_font) DeleteObject(small_font);
     heading=font(30,FW_BOLD); body=font(15,FW_MEDIUM); small_font=font(12,FW_NORMAL);
+    if(notice_page) {
+        for(HWND child=GetWindow(h,GW_CHILD);child;child=GetWindow(child,GW_HWNDNEXT)) ShowWindow(child,SW_HIDE);
+        const auto r=rect(416,452,568,488);
+        auto button=GetDlgItem(h,IDCANCEL);
+        SetWindowPos(button,nullptr,r.left,r.top,r.right-r.left,r.bottom-r.top,SWP_NOZORDER|SWP_NOACTIVATE);
+        SetWindowTextW(button,L"확인"); ShowWindow(button,SW_SHOWNA);
+        SendMessageW(h,DM_SETDEFID,IDCANCEL,0);
+        InvalidateRect(h,nullptr,FALSE); return;
+    }
+    for(int id:{IDC_TAB_DISPLAY,IDC_TAB_SYW2X,IDCANCEL}) ShowWindow(GetDlgItem(h,id),SW_SHOWNA);
     struct Item{int id,a,b,c,d;};
     for(auto i:{Item{IDC_WINDOWED,300,125,431,164},Item{IDC_FULLSCREEN,437,125,568,164},
         Item{IDC_ASPECT_43,300,176,431,210},Item{IDC_ASPECT_169,437,176,568,210},
@@ -172,6 +182,13 @@ void Overlay::paint(HWND h,HDC dc) {
     for(auto r:{rect(0,0,35,2),rect(0,0,2,35),rect(565,0,600,2),rect(598,0,600,35),
                 rect(0,508,35,510),rect(0,475,2,510),rect(565,508,600,510),rect(598,475,600,510)}) fill(dc,r,gold);
     label(dc,small_font,rect(32,20,400,36),L"HQNET  /  SETTINGS",gold);
+    if(notice_page) {
+        label(dc,heading,rect(30,62,570,108),L"16:9 적용 불가",text);
+        label(dc,body,rect(30,145,570,285),aspect_error.c_str(),text,DT_LEFT|DT_WORDBREAK);
+        label(dc,body,rect(30,310,570,365),L"현재 화면 모드를 유지합니다.",gold,DT_LEFT|DT_WORDBREAK);
+        label(dc,small_font,rect(30,385,570,435),L"설정은 변경하지 않았습니다. 자세한 내용은 hqcdd.log에서 확인할 수 있습니다.\n확인 또는 Esc를 눌러 닫으세요.",muted,DT_LEFT|DT_WORDBREAK);
+        return;
+    }
     label(dc,heading,rect(30,42,350,82),syw2x_page?L"SYW2X":L"디스플레이",text);
     label(dc,small_font,rect(30,87,570,106),syw2x_page?syw2x_state.c_str():L"익숙한 전장, 나에게 맞는 화면.",muted);
     fill(dc,rect(30,113,570,114),RGB(76,60,40));

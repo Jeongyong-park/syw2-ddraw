@@ -42,8 +42,9 @@ GDI 자동 전환은 런타임 DLL 로드 이후 GPU 초기화·출력이 실패
 
 `build.ps1`은 빌드, DLL 버전 검사, 네이티브 테스트를 순서대로 실행합니다.
 네이티브 테스트에는 대화형 데스크톱과 D3D11 하드웨어가 필요하며 테스트 창이 나타납니다.
-CTest의 `ci` 라벨은 호스팅 CI에서 실행하는 11개 테스트, `desktop` 라벨은
-로컬 데스크톱에서 실행하는 `wrapper_test`, `asi_core_test`, `gpu_test`를 선택합니다.
+CTest의 `ci` 라벨은 호스팅 CI에서 실행하는 13개 테스트, `desktop` 라벨은
+로컬 데스크톱에서 실행하는 `wrapper_test`, `asi_core_test`, `gpu_test`,
+`aspect_notice_test`, `aspect_notice_escape_test`를 선택합니다.
 모든 네이티브 테스트에는 `native` 라벨도 붙습니다. `ci` 테스트도 임시 Windows 창을
 생성할 수 있으며, 이 분류는 CPU 전용 여부를 뜻하지 않습니다.
 
@@ -160,7 +161,8 @@ CI는 세 ZIP을 생성하고 이 테스트를 실행한 뒤 ZIP과 해시를 �
 | `src/scaling.h` | 확대 방식 이름과 이전 설정 해석 |
 | `src/overlay.*`, `src/settings.*` | 게임 화면 안의 설정 UI |
 | `src/version.*.in` | VERSION에서 생성하는 로그 헤더·Windows 버전 리소스 |
-| `src/widescreen_runtime.*` | 운영 EXE의 SHA-256 확인, 비율·SYW2X 설정 조회, 와이드 초기화 진입점 |
+| `src/widescreen_runtime.*` | 운영 EXE 읽기·호환성 검사 연결, 비율·SYW2X 설정 조회, 와이드 초기화 진입점 |
+| `src/widescreen_compatibility.*` | PE 구조와 비리소스 영역의 SHA-256 검증, 실패 사유 안내 |
 | `src/widescreen_image.cpp` | 메모리 이미지·패치 전 바이트 검증, 주소 재배치, 패치 적용·보호 속성 복원 |
 | `src/widescreen_recipe.h` | 생성된 와이드 패치 명세·코드·재배치 목록 |
 | `src/battle_aspect.*` | 시작 시 비율 초기화, 구형 시제품 복원, ASI 운영 초기화 연결 |
@@ -178,12 +180,19 @@ CI는 세 ZIP을 생성하고 이 테스트를 실행한 뒤 ZIP과 해시를 �
 
 GDI 입력창과의 호환성을 위해 windowed blt-model swap chain을 사용합니다.
 
-운영 와이드 초기화는 `widescreen_runtime.cpp`에서 실행 파일 해시와 설정을 확인한 뒤
+운영 와이드 초기화는 `widescreen_runtime.cpp`에서 실행 파일 호환성과 설정을 확인한 뒤
 `widescreen_image.cpp`에 메모리 이미지와 요청 상태를 전달합니다. 메모리 적용 계층은
 파일이나 INI를 읽지 않습니다. `widescreen_runtime_test`는 이 계층만 링크하여 사설
 이미지에서 4:3 무변경, SYW2X 확장 충돌, 패치 전 바이트 불일치, 주소 재배치와
-보호 속성 복원을 검사합니다. 이 테스트가 운영 EXE의 해시 검사를 대신하지는 않습니다.
+보호 속성 복원을 검사합니다. 이 테스트가 운영 EXE의 호환성 검사를 대신하지는 않습니다.
 성공한 패치의 할당 메모리는 게임 코드에서 계속 참조하므로 프로세스 종료까지 유지합니다.
+
+`widescreen_compatibility_test`는 합성 PE에서 리소스 변경·크기 증가 허용과 코드/데이터 변조,
+섹션·진입점·TLS/import 변경, 잘린 파일·범위·정렬 오류의 거부를 검사합니다.
+`build/Release/widescreen_compatibility_test.exe <EXE> --apply`는 실제 파일의 호환성을 검사하고
+사설 메모리 사본에 16:9 패치를 적용합니다. 게임 실행과 디스크 EXE 수정은 하지 않습니다.
+`aspect_notice_test`와 `aspect_notice_escape_test`는 지원하지 않는 테스트 호스트에서 16:9를 요청해
+오버레이 표시, 확인/Esc 닫기, 설정값 보존, 입력·포커스 복원 및 반복 알림 방지를 검사합니다.
 
 `battle_aspect.h`는 상태와 초기화 API만 선언합니다. `.cpp`의 구형 시제품 처리에서는
 `.hqcode`의 `HQASPECT` 복원 표를 검증하며, ASI 빌드에서는 시제품으로 인식되지 않은
