@@ -2,7 +2,7 @@
 
 [Semantic Versioning 2.0.0](https://semver.org/spec/v2.0.0.html)을 기준으로 관리합니다.
 호환성 판단 대상은 문서화한 게임 빌드 지원, DirectDraw 연동 동작,
-INI 키와 의미, 기본 DLL 교체 설치·업데이트·복구 절차 및 개발용 준비/실행 도구의 사용 방법입니다. 내부 구현 자체는 공개 API가 아닙니다.
+INI 키와 의미, 기본 ASI 설치·업데이트·복구 절차 및 개발용 준비/실행 도구의 사용 방법입니다. 내부 구현 자체는 공개 API가 아닙니다.
 
 | 변경 | 버전 |
 | --- | --- |
@@ -23,7 +23,7 @@ INI 키와 의미, 기본 DLL 교체 설치·업데이트·복구 절차 및 개
 - CMake가 VERSION을 검증하고 프로젝트 버전과 리소스를 생성합니다.
 - DLL의 FileVersion/ProductVersion 문자열과 시작 로그는 동일한 세 자리 버전을 사용합니다.
 - Windows 숫자 버전은 `MAJOR.MINOR.PATCH.0`입니다. 마지막 0은 SemVer의 별도 버전 요소가 아닙니다.
-- ZIP 이름은 `syw2-ddraw-v<버전>.zip`, Git 태그는 `v<버전>`입니다.
+- 기본 ASI ZIP 이름은 `syw2-ddraw-v<버전>-asi.zip`, DLL 호환판은 `syw2-ddraw-v<버전>.zip`, Git 태그는 `v<버전>`입니다.
 - DLL 설치 이름은 ddraw.dll이지만 빌드 이름 및 OriginalFilename 속성은 hqcdd.dll입니다. 파일명 변경은 버전을 변경하지 않습니다.
 - 제작자 표시는 LICENSE에 맞춘 Park Jeongyong입니다. Windows 속성에서는 CompanyName에 표시합니다.
   이 정보는 코드 서명이나 인증서의 게시자 신원과 별개입니다.
@@ -32,11 +32,11 @@ INI 키와 의미, 기본 DLL 교체 설치·업데이트·복구 절차 및 개
 
 1. VERSION을 변경하고 CHANGELOG의 Unreleased 항목을 새 버전으로 이동합니다.
 2. `./build.ps1`과 `python -m unittest discover -s tests -p "test_*.py" -v`를 실행합니다.
-3. `python package.py`로 ZIP을 만들고 DLL 속성과 패키지 내용을 확인합니다.
+3. `python package.py --asi`로 기본 ASI ZIP, `python package.py`로 DLL 호환판을 만들고 파일 속성과 패키지 내용을 확인합니다.
    확보한 환경의 실제 실행 결과와 미검증 범위를 기록합니다. 운영체제별 수동 검증은 1.0 이후 후속 작업입니다.
-   사용자 ZIP 루트의 ddraw.dll과 hqcdd.ini가 README의 설치 경로와 일치해야 합니다.
+   ASI ZIP의 plugins/hqcdd.asi와 루트 hqcdd.ini가 README의 설치 경로와 일치해야 합니다. 기존 ASI 로더와 SYW2X는 포함하지 않습니다.
    `python package.py --developer`로 개발자 ZIP도 생성하고 `tests/test_distribution.ps1`을 실행합니다.
-   두 ZIP 및 각 .zip.sha256을 확인하고 [자동 검증 결과와 후속 수동 검증 범위](milestone-0.6.md)를 기록합니다.
+   세 ZIP 및 각 .zip.sha256을 확인하고 자동 검증 결과와 후속 수동 검증 범위를 기록합니다.
 4. 확정한 변경을 커밋한 뒤 해당 커밋에 `v<버전>` 태그를 붙여 배포합니다.
 5. 배포한 버전은 같은 이름으로 내용을 바꾸지 않습니다. 변경 시 새 버전을 사용합니다.
 
@@ -45,7 +45,7 @@ INI 키와 의미, 기본 DLL 교체 설치·업데이트·복구 절차 및 개
 
 VERSION과 정확히 일치하는 `v<버전>` 태그를 push하면 빌드 CI가 실행됩니다.
 Unicorn 좌표 변환, Python 테스트, DLL 속성, 추출 ZIP의 DLL import 및 태그·ZIP 해시 검사가 통과해야 게시 작업이 시작됩니다.
-사용자 ZIP과 `.zip.sha256`만 Release Assets에 게시하며 개발자 ZIP은 Actions 아티팩트로 제공합니다.
+ASI ZIP과 `.zip.sha256`만 Release Assets에 게시하며 DLL 호환판·개발자 ZIP은 Actions 아티팩트로 제공합니다.
 0.x는 GitHub Pre-release로 표시하고 1.0 이상은 정식 Release로 게시합니다.
 이는 VERSION의 SemVer 문법과 별개인 GitHub 표시이며 `-rc.1` 태그 지원은 아직 없습니다.
 
