@@ -42,6 +42,19 @@ GDI 자동 전환은 런타임 DLL 로드 이후 GPU 초기화·출력이 실패
 
 `build.ps1`은 빌드, DLL 버전 검사, 네이티브 테스트를 순서대로 실행합니다.
 네이티브 테스트에는 대화형 데스크톱과 D3D11 하드웨어가 필요하며 테스트 창이 나타납니다.
+CTest의 `ci` 라벨은 호스팅 CI에서 실행하는 11개 테스트, `desktop` 라벨은
+로컬 데스크톱에서 실행하는 `wrapper_test`, `asi_core_test`, `gpu_test`를 선택합니다.
+모든 네이티브 테스트에는 `native` 라벨도 붙습니다. `ci` 테스트도 임시 Windows 창을
+생성할 수 있으며, 이 분류는 CPU 전용 여부를 뜻하지 않습니다.
+
+```powershell
+ctest --test-dir build -C Release -L "^ci$" --no-tests=error --output-on-failure
+ctest --test-dir build -C Release -L "^desktop$" --no-tests=error --output-on-failure
+```
+
+새 네이티브 테스트는 CMake의 `hqcdd_test(이름 ci|desktop 실행명 인수...)`로 등록합니다.
+CI 대상은 이 라벨에서 선택하므로 워크플로에 테스트 이름을 추가할 필요가 없습니다.
+`build.ps1`은 라벨 필터 없이 전체 네이티브 테스트를 실행합니다.
 CI는 Windows x86 컴파일, DLL 메타데이터, Python 설치·패키징 테스트를 실행합니다.
 호스팅 CI에서 GPU 실행 결과를 검증했다고 간주하지 않습니다.
 
